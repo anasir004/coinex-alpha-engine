@@ -1,0 +1,993 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>CoinEx Alpha Engine</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=DM+Mono:wght@300;400;500&family=Syne:wght@400;700;800&display=swap" rel="stylesheet">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --bg:#03050a;--surface:#080d18;--surface2:#0d1525;
+  --border:#151f35;--border2:#1e2d4a;
+  --accent:#9945ff;--bullish:#14f195;--bearish:#ef4444;
+  --warning:#f59e0b;--text:#8899bb;--white:#f0f4ff;--dim:#3d5070;
+}
+html,body{height:100%;background:var(--bg);color:var(--white);font-family:'DM Mono',monospace;overflow:hidden}
+body{display:flex;flex-direction:column}
+#header{
+  background:var(--surface);border-bottom:1px solid var(--border2);
+  padding:10px 16px;display:flex;align-items:center;justify-content:space-between;
+  flex-shrink:0;z-index:100;
+}
+#logo{font-family:'Orbitron',sans-serif;font-size:13px;font-weight:900;
+  background:linear-gradient(90deg,var(--accent),var(--bullish));
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;letter-spacing:1px}
+#header-right{display:flex;align-items:center;gap:10px}
+#session-badge{font-family:'Orbitron',sans-serif;font-size:9px;font-weight:700;
+  padding:4px 8px;border-radius:4px;letter-spacing:1px;}
+.session-asia{background:rgba(153,69,255,.2);color:var(--accent);border:1px solid var(--accent)}
+.session-europe{background:rgba(20,241,149,.2);color:var(--bullish);border:1px solid var(--bullish)}
+.session-us{background:rgba(245,158,11,.2);color:var(--warning);border:1px solid var(--warning)}
+#utc-time{font-size:10px;color:var(--dim)}
+#data-mgmt-btn{background:none;border:1px solid var(--border2);color:var(--text);
+  padding:5px 8px;border-radius:4px;cursor:pointer;font-size:11px}
+#main{flex:1;overflow-y:auto;overflow-x:hidden;padding-bottom:70px}
+#tabbar{position:fixed;bottom:0;left:0;right:0;height:60px;
+  background:var(--surface);border-top:1px solid var(--border2);display:flex;z-index:200;}
+.tab-btn{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:2px;border:none;background:none;color:var(--dim);cursor:pointer;
+  font-family:'DM Mono',monospace;font-size:8px;letter-spacing:.5px;
+  transition:color .2s;padding:8px 2px;}
+.tab-btn.active{color:var(--accent)}
+.tab-btn svg{width:18px;height:18px}
+.tab-content{display:none;padding:12px}
+.tab-content.active{display:block}
+.banner{padding:8px 12px;border-radius:6px;margin-bottom:10px;
+  font-size:11px;display:flex;align-items:center;gap:8px;}
+.banner-peak{background:rgba(20,241,149,.1);border:1px solid var(--bullish);color:var(--bullish)}
+.banner-quiet{background:rgba(239,68,68,.1);border:1px solid var(--bearish);color:var(--bearish)}
+.banner-warn{background:rgba(245,158,11,.1);border:1px solid var(--warning);color:var(--warning)}
+.banner-info{background:rgba(153,69,255,.1);border:1px solid var(--accent);color:var(--accent)}
+#scanner-status{background:var(--surface2);border:1px solid var(--border);border-radius:6px;
+  padding:8px 12px;margin-bottom:10px;display:flex;align-items:center;
+  justify-content:space-between;font-size:10px;color:var(--text);}
+.status-dot{width:7px;height:7px;border-radius:50%;background:var(--bullish);
+  animation:pulse 2s infinite;flex-shrink:0}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+.stats-bar{display:grid;grid-template-columns:repeat(5,1fr);gap:6px;margin-bottom:10px;}
+.stat-box{background:var(--surface2);border:1px solid var(--border);border-radius:6px;
+  padding:8px 4px;text-align:center;}
+.stat-val{font-family:'Orbitron',sans-serif;font-size:14px;font-weight:700;color:var(--white)}
+.stat-lbl{font-size:8px;color:var(--dim);margin-top:2px}
+.btn{padding:8px 14px;border-radius:6px;border:none;cursor:pointer;
+  font-family:'DM Mono',monospace;font-size:11px;font-weight:500;transition:all .2s;}
+.btn-primary{background:var(--accent);color:var(--white)}
+.btn-primary:hover{background:#7b2fd4}
+.btn-secondary{background:var(--surface2);color:var(--text);border:1px solid var(--border2)}
+.btn-secondary:hover{color:var(--white);border-color:var(--accent)}
+.btn-danger{background:rgba(239,68,68,.15);color:var(--bearish);border:1px solid var(--bearish)}
+.btn-success{background:rgba(20,241,149,.15);color:var(--bullish);border:1px solid var(--bullish)}
+.btn-sm{padding:5px 10px;font-size:10px}
+.btn-row{display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap}
+.filter-pills{display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap}
+.pill{padding:5px 12px;border-radius:20px;border:1px solid var(--border2);
+  background:var(--surface2);color:var(--text);font-size:10px;cursor:pointer;}
+.pill.active{background:var(--accent);color:var(--white);border-color:var(--accent)}
+.coin-card{background:var(--surface);border:1px solid var(--border);border-radius:8px;
+  margin-bottom:10px;overflow:hidden;position:relative;}
+.coin-card-top{height:3px;width:100%}
+.card-top-green{background:linear-gradient(90deg,var(--bullish),transparent)}
+.card-top-amber{background:linear-gradient(90deg,var(--warning),transparent)}
+.card-top-red{background:linear-gradient(90deg,var(--bearish),transparent)}
+.coin-card-body{padding:12px}
+.coin-header{display:flex;align-items:center;gap:10px;margin-bottom:10px}
+.score-ring{width:44px;height:44px;border-radius:50%;flex-shrink:0;
+  display:flex;align-items:center;justify-content:center;
+  font-family:'Orbitron',sans-serif;font-size:12px;font-weight:700;
+  border:2px solid var(--border2);position:relative;}
+.score-ring.high{border-color:var(--bullish);color:var(--bullish)}
+.score-ring.mid{border-color:var(--warning);color:var(--warning)}
+.score-ring.low{border-color:var(--bearish);color:var(--bearish)}
+.coin-name-block{flex:1;min-width:0}
+.coin-name{font-family:'Syne',sans-serif;font-size:15px;font-weight:700;
+  color:var(--white);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.coin-market{font-size:10px;color:var(--dim);margin-top:1px}
+.coin-address{font-size:9px;color:var(--accent);cursor:pointer;margin-top:2px;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.coin-address:hover{text-decoration:underline}
+.metrics-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:10px}
+.metric-box{background:var(--surface2);border-radius:5px;padding:6px 8px;text-align:center}
+.metric-val{font-size:12px;font-weight:500;color:var(--white)}
+.metric-val.pos{color:var(--bullish)}
+.metric-val.neg{color:var(--bearish)}
+.metric-lbl{font-size:8px;color:var(--dim);margin-top:1px}
+.pressure-bar-wrap{margin-bottom:8px}
+.pressure-label{display:flex;justify-content:space-between;font-size:9px;color:var(--dim);margin-bottom:3px}
+.pressure-track{height:5px;background:rgba(239,68,68,.3);border-radius:3px;overflow:hidden}
+.pressure-fill{height:100%;background:var(--bullish);border-radius:3px;transition:width .5s}
+.tags-wrap{display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px}
+.tag{padding:2px 7px;border-radius:3px;font-size:8px;font-weight:500;
+  background:rgba(153,69,255,.15);color:var(--accent);border:1px solid rgba(153,69,255,.3);}
+.tag.bullish-tag{background:rgba(20,241,149,.1);color:var(--bullish);border-color:rgba(20,241,149,.3)}
+.tag.bearish-tag{background:rgba(239,68,68,.1);color:var(--bearish);border-color:rgba(239,68,68,.3)}
+.tag.warning-tag{background:rgba(245,158,11,.1);color:var(--warning);border-color:rgba(245,158,11,.3)}
+.ai-insight{background:rgba(153,69,255,.05);border:1px solid rgba(153,69,255,.2);
+  border-radius:5px;padding:8px;margin-bottom:8px;font-size:10px;color:var(--text);line-height:1.5;}
+.ai-insight .ai-label{font-size:8px;color:var(--accent);margin-bottom:4px;
+  font-family:'Orbitron',sans-serif;letter-spacing:1px}
+.card-actions{display:flex;gap:6px;flex-wrap:wrap}
+.risk-badge{padding:2px 8px;border-radius:3px;font-size:9px;font-weight:700;
+  background:rgba(245,158,11,.15);color:var(--warning);}
+.risk-badge.high{background:rgba(239,68,68,.15);color:var(--bearish)}
+.ob-wrap{margin-bottom:8px}
+.ob-label{font-size:9px;color:var(--dim);margin-bottom:4px}
+.section-header{font-family:'Orbitron',sans-serif;font-size:11px;font-weight:700;
+  color:var(--text);letter-spacing:1px;margin-bottom:10px;display:flex;align-items:center;gap:8px;}
+.section-header::after{content:'';flex:1;height:1px;background:var(--border)}
+.heatmap{display:grid;grid-template-columns:repeat(8,1fr);gap:3px;margin-bottom:10px}
+.heatmap-cell{aspect-ratio:1;border-radius:3px;background:var(--surface2);
+  display:flex;align-items:center;justify-content:center;
+  font-size:7px;color:var(--dim);cursor:default;transition:background .3s;}
+.heatmap-cell.active{color:var(--white)}
+.fp-panel{background:var(--surface2);border:1px solid var(--border);border-radius:8px;
+  padding:12px;margin-bottom:10px;}
+.fp-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:8px}
+.fp-item{text-align:center}
+.fp-val{font-family:'Orbitron',sans-serif;font-size:13px;color:var(--accent)}
+.fp-lbl{font-size:8px;color:var(--dim);margin-top:2px}
+#setup-screen{padding:20px 12px}
+.setup-title{font-family:'Orbitron',sans-serif;font-size:18px;font-weight:900;
+  text-align:center;margin-bottom:6px;
+  background:linear-gradient(90deg,var(--accent),var(--bullish));
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.setup-sub{text-align:center;color:var(--text);font-size:11px;margin-bottom:24px}
+.profile-cards{display:flex;flex-direction:column;gap:10px;margin-bottom:24px}
+.profile-card{background:var(--surface);border:2px solid var(--border);border-radius:10px;
+  padding:16px;cursor:pointer;transition:all .2s;}
+.profile-card:hover,.profile-card.selected{border-color:var(--accent)}
+.profile-card.selected{background:rgba(153,69,255,.08)}
+.profile-name{font-family:'Orbitron',sans-serif;font-size:13px;font-weight:700;
+  color:var(--white);margin-bottom:6px}
+.profile-desc{font-size:10px;color:var(--text);line-height:1.5}
+.profile-tags{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap}
+.monitor-input-wrap{background:var(--surface);border:1px solid var(--border);border-radius:8px;
+  padding:14px;margin-bottom:14px;}
+.monitor-input-row{display:flex;gap:8px;margin-bottom:10px}
+.monitor-input{flex:1;background:var(--surface2);border:1px solid var(--border2);
+  border-radius:6px;padding:10px 12px;color:var(--white);
+  font-family:'DM Mono',monospace;font-size:12px;outline:none;}
+.monitor-input:focus{border-color:var(--accent)}
+.interval-select{background:var(--surface2);border:1px solid var(--border2);border-radius:6px;
+  padding:8px;color:var(--white);font-family:'DM Mono',monospace;font-size:11px;}
+.monitor-card{background:var(--surface);border:1px solid var(--border);border-radius:8px;
+  padding:12px;margin-bottom:10px;position:relative;transition:border-color .3s;}
+.monitor-card.bullish-border{border-color:var(--bullish)}
+.monitor-card-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
+.market-section{margin-bottom:18px}
+.sentiment-bar-wrap{margin-bottom:16px}
+.sentiment-track{height:10px;background:rgba(239,68,68,.3);border-radius:5px;overflow:hidden;margin:6px 0}
+.sentiment-fill{height:100%;background:var(--bullish);border-radius:5px;transition:width .5s}
+.sentiment-labels{display:flex;justify-content:space-between;font-size:9px;color:var(--dim)}
+.top-list{display:flex;flex-direction:column;gap:6px}
+.top-item{background:var(--surface2);border-radius:6px;padding:8px 12px;
+  display:flex;justify-content:space-between;align-items:center;}
+.top-item-name{font-family:'Syne',sans-serif;font-size:13px;color:var(--white)}
+.top-item-change{font-size:12px;font-weight:500}
+.timeframe-pills{display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap}
+.compare-tags{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px;min-height:36px;
+  background:var(--surface2);border-radius:6px;padding:8px;}
+.compare-tag{background:rgba(153,69,255,.15);color:var(--accent);border:1px solid rgba(153,69,255,.3);
+  padding:4px 10px;border-radius:4px;font-size:10px;cursor:pointer;
+  display:flex;align-items:center;gap:6px;}
+.compare-tag .remove{color:var(--bearish);font-size:12px}
+.compare-result{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:14px;}
+.confidence-ring{width:80px;height:80px;border-radius:50%;border:3px solid var(--accent);
+  display:flex;align-items:center;justify-content:center;margin:0 auto 14px;
+  font-family:'Orbitron',sans-serif;font-size:22px;font-weight:900;color:var(--accent);}
+.compare-table{width:100%;border-collapse:collapse;font-size:10px;margin-bottom:10px}
+.compare-table th{color:var(--dim);padding:6px 8px;text-align:left;border-bottom:1px solid var(--border)}
+.compare-table td{padding:6px 8px;border-bottom:1px solid var(--border);color:var(--text)}
+.preset-pills{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px}
+.custom-range{display:flex;flex-direction:column;gap:8px;margin-bottom:12px}
+.datetime-input{background:var(--surface2);border:1px solid var(--border2);border-radius:6px;
+  padding:8px 12px;color:var(--white);font-family:'DM Mono',monospace;font-size:11px;width:100%;}
+.history-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:14px}
+.pump-profile{background:rgba(20,241,149,.04);border:1px solid rgba(20,241,149,.2);
+  border-radius:8px;padding:14px;margin-bottom:14px;}
+.pump-profile-title{font-family:'Orbitron',sans-serif;font-size:11px;color:var(--bullish);
+  margin-bottom:10px;letter-spacing:1px}
+.checklist-item{display:flex;align-items:center;gap:8px;padding:6px 0;
+  border-bottom:1px solid var(--border);font-size:11px;color:var(--text);}
+.checklist-item:last-child{border-bottom:none}
+.check-icon{color:var(--bullish);font-size:14px}
+#chat-messages{height:calc(100vh - 280px);overflow-y:auto;padding:10px;
+  display:flex;flex-direction:column;gap:10px;}
+.chat-msg{max-width:85%;padding:10px 14px;border-radius:10px;font-size:12px;line-height:1.6}
+.chat-msg.user{align-self:flex-end;background:rgba(153,69,255,.25);
+  border:1px solid rgba(153,69,255,.4);color:var(--white);}
+.chat-msg.ai{align-self:flex-start;background:var(--surface2);
+  border:1px solid var(--border2);color:var(--text);}
+.chat-input-wrap{display:flex;gap:8px;padding:10px;
+  background:var(--surface);border-top:1px solid var(--border);}
+.chat-input{flex:1;background:var(--surface2);border:1px solid var(--border2);
+  border-radius:8px;padding:10px 14px;color:var(--white);
+  font-family:'DM Mono',monospace;font-size:12px;outline:none;resize:none;}
+.chat-input:focus{border-color:var(--accent)}
+.suggestions{display:flex;flex-direction:column;gap:6px;padding:10px}
+.suggestion-btn{background:var(--surface2);border:1px solid var(--border2);border-radius:6px;
+  padding:10px 14px;color:var(--text);font-size:11px;cursor:pointer;text-align:left;
+  font-family:'DM Mono',monospace;transition:all .2s;}
+.suggestion-btn:hover{border-color:var(--accent);color:var(--white)}
+.perf-cols{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:14px}
+.perf-col{background:var(--surface2);border-radius:8px;padding:10px}
+.perf-col-title{font-size:9px;color:var(--dim);margin-bottom:8px;
+  font-family:'Orbitron',sans-serif;letter-spacing:1px}
+.perf-item{padding:6px;border-radius:5px;margin-bottom:4px;cursor:pointer;
+  border:1px solid var(--border);transition:border-color .2s;}
+.perf-item:hover{border-color:var(--accent)}
+.perf-item-name{font-size:10px;color:var(--white);font-family:'Syne',sans-serif}
+.perf-item-val{font-size:9px;margin-top:2px}
+.timeline-wrap{background:var(--surface2);border-radius:8px;padding:12px;margin-bottom:14px;}
+.timeline-canvas{width:100%;height:120px}
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:500;
+  display:flex;align-items:flex-end;justify-content:center;}
+.modal-overlay.hidden{display:none}
+.modal{background:var(--surface);border:1px solid var(--border2);border-radius:12px 12px 0 0;
+  padding:20px;width:100%;max-height:80vh;overflow-y:auto;}
+.modal-title{font-family:'Orbitron',sans-serif;font-size:13px;font-weight:700;
+  color:var(--white);margin-bottom:16px;display:flex;justify-content:space-between;align-items:center}
+.modal-close{background:none;border:none;color:var(--dim);font-size:20px;cursor:pointer}
+.form-group{margin-bottom:12px}
+.form-label{font-size:10px;color:var(--dim);margin-bottom:5px;display:block}
+.form-input{width:100%;background:var(--surface2);border:1px solid var(--border2);
+  border-radius:6px;padding:9px 12px;color:var(--white);
+  font-family:'DM Mono',monospace;font-size:11px;outline:none;}
+.form-input:focus{border-color:var(--accent)}
+.toggle-row{display:flex;justify-content:space-between;align-items:center;
+  padding:8px 0;border-bottom:1px solid var(--border)}
+.toggle{width:36px;height:20px;border-radius:10px;background:var(--border2);
+  position:relative;cursor:pointer;transition:background .2s}
+.toggle.on{background:var(--accent)}
+.toggle::after{content:'';position:absolute;width:14px;height:14px;background:white;
+  border-radius:50%;top:3px;left:3px;transition:transform .2s}
+.toggle.on::after{transform:translateX(16px)}
+#toast-container{position:fixed;top:16px;right:12px;z-index:999;display:flex;
+  flex-direction:column;gap:6px}
+.toast{background:var(--surface2);border:1px solid var(--border2);border-radius:8px;
+  padding:10px 14px;font-size:11px;color:var(--white);max-width:240px;
+  animation:slideIn .3s ease;}
+.toast.success{border-color:var(--bullish);color:var(--bullish)}
+.toast.error{border-color:var(--bearish);color:var(--bearish)}
+.toast.warn{border-color:var(--warning);color:var(--warning)}
+@keyframes slideIn{from{transform:translateX(100%);opacity:0}to{transform:translateX(0);opacity:1}}
+.lowmc-profile{background:rgba(153,69,255,.05);border:1px solid rgba(153,69,255,.2);
+  border-radius:8px;padding:14px;margin-bottom:14px;}
+.session-breakdown{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:10px}
+.session-box{background:var(--surface2);border-radius:6px;padding:10px;text-align:center}
+.session-box-name{font-size:8px;color:var(--dim);margin-bottom:4px}
+.session-box-val{font-family:'Orbitron',sans-serif;font-size:14px;font-weight:700}
+.storage-meter{margin-bottom:10px}
+.storage-track{height:8px;background:var(--surface2);border-radius:4px;overflow:hidden;margin:6px 0}
+.storage-fill{height:100%;border-radius:4px;transition:width .5s}
+.storage-ok{background:var(--bullish)}
+.storage-warn{background:var(--warning)}
+.storage-danger{background:var(--bearish)}
+.new-badge{background:rgba(20,241,149,.15);color:var(--bullish);
+  border:1px solid var(--bullish);padding:1px 6px;border-radius:3px;font-size:7px;
+  font-weight:700;letter-spacing:1px;}
+::-webkit-scrollbar{width:4px}
+::-webkit-scrollbar-track{background:var(--bg)}
+::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px}
+</style>
+</head>
+<body>
+
+<div id="header">
+  <div id="logo">COINEX ALPHA ENGINE</div>
+  <div id="header-right">
+    <span id="utc-time"></span>
+    <span id="session-badge">ASIA</span>
+    <button id="data-mgmt-btn" onclick="openDataMgmt()">⚙ DATA</button>
+  </div>
+</div>
+
+<div id="main">
+
+<!-- TAB 1: SCANNER -->
+<div id="tab-scanner" class="tab-content active">
+  <div id="setup-screen">
+    <div class="setup-title">COINEX ALPHA ENGINE</div>
+    <div class="setup-sub">Select your risk profile to begin scanning</div>
+    <div class="profile-cards">
+      <div class="profile-card" onclick="selectProfile('conservative')">
+        <div class="profile-name">🛡 CONSERVATIVE</div>
+        <div class="profile-desc">24h change >10% · Volume $500K+ · Threshold 65</div>
+        <div class="profile-tags">
+          <span class="tag">LOW RISK</span>
+          <span class="tag bullish-tag">ESTABLISHED</span>
+        </div>
+      </div>
+      <div class="profile-card selected" onclick="selectProfile('balanced')">
+        <div class="profile-name">⚖ BALANCED</div>
+        <div class="profile-desc">24h change >0% · Volume $50K+ · Threshold 40</div>
+        <div class="profile-tags">
+          <span class="tag warning-tag">MODERATE</span>
+          <span class="tag">RECOMMENDED</span>
+        </div>
+      </div>
+      <div class="profile-card" onclick="selectProfile('degen')">
+        <div class="profile-name">🔥 DEGEN</div>
+        <div class="profile-desc">All ranges · No volume floor · Threshold 20</div>
+        <div class="profile-tags">
+          <span class="tag bearish-tag">HIGH RISK</span>
+          <span class="tag bearish-tag">DEGEN MODE</span>
+        </div>
+      </div>
+    </div>
+    <button class="btn btn-primary" style="width:100%;padding:14px;font-size:13px"
+      onclick="launchScanner()">LAUNCH SCANNER</button>
+  </div>
+
+  <div id="scanner-dashboard" style="display:none">
+    <div id="peak-banner" class="banner banner-peak" style="display:none">
+      ⚡ PEAK HOUR — Timing multiplier active (1.12x). Historical pump activity high.
+    </div>
+    <div id="quiet-banner" class="banner banner-quiet" style="display:none">
+      🌙 QUIET HOUR — Low historical activity (0.88x). Be selective.
+    </div>
+    <div id="storage-warn-banner" class="banner banner-warn" style="display:none">
+      ⚠ Supabase storage above 70%. Open Data Management to clean up.
+    </div>
+    <div id="scanner-status">
+      <div style="display:flex;align-items:center;gap:8px">
+        <div class="status-dot"></div>
+        <span id="scanner-status-text">Scanning...</span>
+      </div>
+      <span id="scanner-cycle-text" style="color:var(--dim)">Cycle 0</span>
+    </div>
+    <div class="stats-bar">
+      <div class="stat-box"><div class="stat-val" id="stat-pairs">0</div><div class="stat-lbl">PAIRS</div></div>
+      <div class="stat-box"><div class="stat-val" id="stat-signals">0</div><div class="stat-lbl">SIGNALS</div></div>
+      <div class="stat-box"><div class="stat-val" id="stat-winners">0</div><div class="stat-lbl">WINNERS</div></div>
+      <div class="stat-box"><div class="stat-val" id="stat-cycles">0</div><div class="stat-lbl">CYCLES</div></div>
+      <div class="stat-box"><div class="stat-val" id="stat-avgscore">0</div><div class="stat-lbl">AVG SCORE</div></div>
+    </div>
+    <div class="fp-panel">
+      <div class="section-header">WINNER FINGERPRINT</div>
+      <div class="fp-grid">
+        <div class="fp-item"><div class="fp-val" id="fp-mc">--</div><div class="fp-lbl">AVG MC</div></div>
+        <div class="fp-item"><div class="fp-val" id="fp-br">--</div><div class="fp-lbl">BUY RATIO</div></div>
+        <div class="fp-item"><div class="fp-val" id="fp-va">--</div><div class="fp-lbl">VOL ACCEL</div></div>
+        <div class="fp-item"><div class="fp-val" id="fp-score">--</div><div class="fp-lbl">AVG SCORE</div></div>
+        <div class="fp-item"><div class="fp-val" id="fp-count">0</div><div class="fp-lbl">SAMPLES</div></div>
+        <div class="fp-item"><div class="fp-val" id="fp-mult">1.0x</div><div class="fp-lbl">TIMING</div></div>
+      </div>
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-secondary btn-sm" onclick="pauseResume()" id="pause-btn">⏸ PAUSE</button>
+      <button class="btn btn-secondary btn-sm" onclick="scanNow()">⟳ SCAN NOW</button>
+      <button class="btn btn-secondary btn-sm" onclick="openSettings()">⚙ SETTINGS</button>
+      <button class="btn btn-danger btn-sm" onclick="resetScanner()">↺ RESET</button>
+    </div>
+    <div class="filter-pills">
+      <div class="pill active" onclick="setFilter('all',this)">ALL</div>
+      <div class="pill" onclick="setFilter('high',this)">HIGH 70+</div>
+      <div class="pill" onclick="setFilter('mid',this)">MID 40-69</div>
+      <div class="pill" onclick="setFilter('signals',this)">SIGNALS</div>
+    </div>
+    <div id="coin-list"></div>
+  </div>
+</div>
+
+<!-- TAB 2: MONITOR -->
+<div id="tab-monitor" class="tab-content">
+  <div class="monitor-input-wrap">
+    <div class="section-header">ADD COIN TO MONITOR</div>
+    <div class="monitor-input-row">
+      <input class="monitor-input" id="monitor-input" placeholder="e.g. SOLUSDT or SOL" />
+      <select class="interval-select" id="monitor-interval">
+        <option value="5000">5s</option>
+        <option value="10000">10s</option>
+        <option value="30000" selected>30s</option>
+        <option value="60000">1min</option>
+        <option value="120000">2min</option>
+      </select>
+    </div>
+    <button class="btn btn-primary" style="width:100%" onclick="previewCoin()">ANALYZE</button>
+    <div id="monitor-preview" style="display:none;margin-top:12px">
+      <div class="coin-card">
+        <div id="preview-top" class="coin-card-top card-top-amber"></div>
+        <div class="coin-card-body">
+          <div class="coin-header">
+            <div class="score-ring mid" id="preview-score-ring">--</div>
+            <div class="coin-name-block">
+              <div class="coin-name" id="preview-name">--</div>
+              <div class="coin-market" id="preview-market">--</div>
+            </div>
+          </div>
+          <div class="metrics-grid">
+            <div class="metric-box"><div class="metric-val" id="preview-ch24">--</div><div class="metric-lbl">24H CHANGE</div></div>
+            <div class="metric-box"><div class="metric-val" id="preview-vol">--</div><div class="metric-lbl">VOL 24H</div></div>
+            <div class="metric-box"><div class="metric-val" id="preview-price">--</div><div class="metric-lbl">PRICE</div></div>
+            <div class="metric-box"><div class="metric-val" id="preview-high">--</div><div class="metric-lbl">24H HIGH</div></div>
+            <div class="metric-box"><div class="metric-val" id="preview-low">--</div><div class="metric-lbl">24H LOW</div></div>
+            <div class="metric-box"><div class="metric-val" id="preview-br">--</div><div class="metric-lbl">BUY RATIO</div></div>
+          </div>
+          <div class="ob-wrap" id="preview-ob" style="display:none">
+            <div class="ob-label">ORDER BOOK PRESSURE</div>
+            <div class="pressure-bar-wrap">
+              <div class="pressure-label">
+                <span>BIDS</span><span id="preview-ob-pct">50%</span><span>ASKS</span>
+              </div>
+              <div class="pressure-track">
+                <div class="pressure-fill" id="preview-ob-fill" style="width:50%"></div>
+              </div>
+            </div>
+          </div>
+          <div id="preview-ai-result" class="ai-insight" style="display:none">
+            <div class="ai-label">⬡ GROQ ANALYSIS</div>
+            <div id="preview-ai-text"></div>
+          </div>
+          <div class="btn-row" style="margin-bottom:0">
+            <button class="btn btn-success btn-sm" onclick="addToMonitor()">+ MONITOR</button>
+            <button class="btn btn-primary btn-sm" onclick="analyzePreviewCoin()">⬡ AI ANALYZE</button>
+            <button class="btn btn-secondary btn-sm" id="preview-dex-btn">↗ COINEX</button>
+            <button class="btn btn-danger btn-sm" onclick="clearPreview()">✕ CLEAR</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="section-header">ACTIVE MONITORS</div>
+  <div id="monitor-list">
+    <div style="color:var(--dim);font-size:11px;text-align:center;padding:20px">
+      No coins being monitored. Add one above.
+    </div>
+  </div>
+</div>
+
+<!-- TAB 3: MARKET -->
+<div id="tab-market" class="tab-content">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+    <div class="section-header" style="margin-bottom:0">MARKET OVERVIEW</div>
+    <button class="btn btn-primary btn-sm" onclick="aiMarketSummary()">⬡ AI SUMMARY</button>
+  </div>
+  <div id="market-ai-result" class="ai-insight" style="display:none;margin-bottom:14px">
+    <div class="ai-label">⬡ GROQ MARKET SUMMARY</div>
+    <div id="market-ai-text"></div>
+  </div>
+  <div class="sentiment-bar-wrap">
+    <div style="font-size:10px;color:var(--dim);margin-bottom:4px">OVERALL MARKET SENTIMENT</div>
+    <div class="sentiment-track">
+      <div class="sentiment-fill" id="sentiment-fill" style="width:50%"></div>
+    </div>
+    <div class="sentiment-labels">
+      <span>BULLISH <span id="sentiment-bull">50</span>%</span>
+      <span>BEARISH <span id="sentiment-bear">50</span>%</span>
+    </div>
+  </div>
+  <div class="timeframe-pills">
+    <div class="pill active" onclick="setMarketTimeframe('1h',this)">1H</div>
+    <div class="pill" onclick="setMarketTimeframe('6h',this)">6H</div>
+    <div class="pill" onclick="setMarketTimeframe('24h',this)">24H</div>
+    <div class="pill" onclick="setMarketTimeframe('7d',this)">7D</div>
+  </div>
+  <div class="market-section">
+    <div class="section-header">TOP GAINERS</div>
+    <div class="top-list" id="market-gainers"></div>
+  </div>
+  <div class="market-section">
+    <div class="section-header">TOP LOSERS</div>
+    <div class="top-list" id="market-losers"></div>
+  </div>
+  <div class="market-section">
+    <div class="section-header">VOLUME BREAKOUTS (3x+)</div>
+    <div class="top-list" id="market-breakouts"></div>
+  </div>
+  <div class="market-section">
+    <div class="section-header">NEW LISTINGS DETECTED</div>
+    <div id="market-new-listings">
+      <div style="color:var(--dim);font-size:10px">Accumulating new listing data...</div>
+    </div>
+  </div>
+  <div class="market-section">
+    <div class="section-header">LOW MC PUMP PROFILE</div>
+    <div class="lowmc-profile" id="lowmc-live-profile">
+      <div style="color:var(--dim);font-size:10px">Loading pump profile...</div>
+    </div>
+  </div>
+  <div class="market-section">
+    <div class="section-header">NARRATIVE TRENDS</div>
+    <div id="market-narratives" class="top-list"></div>
+  </div>
+  <div class="market-section">
+    <div class="section-header">WINNER PATTERNS</div>
+    <div id="market-winner-patterns">
+      <div style="color:var(--dim);font-size:10px">Patterns build as scanner collects data...</div>
+    </div>
+  </div>
+  <div class="market-section">
+    <div class="section-header">FAILURE PATTERNS</div>
+    <div id="market-failure-patterns">
+      <div style="color:var(--dim);font-size:10px">Failure patterns accumulate over time...</div>
+    </div>
+  </div>
+  <div class="market-section">
+    <div class="section-header">STABLE MIDDLE GROUND</div>
+    <div class="top-list" id="market-stable"></div>
+  </div>
+  <div class="market-section">
+    <div class="section-header">PUMP TIME HEATMAP (UTC)</div>
+    <div class="heatmap" id="market-heatmap"></div>
+    <div style="display:flex;gap:12px;font-size:9px;color:var(--dim);margin-top:6px">
+      <span>🟩 High activity</span><span>🟨 Moderate</span><span>⬛ Low</span>
+    </div>
+  </div>
+</div>
+
+<!-- TAB 4: COMPARE -->
+<div id="tab-compare" class="tab-content">
+  <div class="section-header">MULTI-COIN PATTERN COMPARE</div>
+  <div style="display:flex;gap:8px;margin-bottom:10px">
+    <input class="monitor-input" id="compare-input" placeholder="Enter market symbol e.g. DOGEUSDT" />
+    <button class="btn btn-secondary btn-sm" onclick="addCompareTag()">ADD</button>
+  </div>
+  <div class="compare-tags" id="compare-tags">
+    <span style="color:var(--dim);font-size:10px;align-self:center">Add up to 20 coins</span>
+  </div>
+  <button class="btn btn-primary" style="width:100%;margin-bottom:14px"
+    onclick="runCompare()">RUN PATTERN ANALYSIS</button>
+  <div id="compare-results" style="display:none">
+    <div class="compare-result">
+      <div class="confidence-ring" id="compare-confidence">--</div>
+      <div style="text-align:center;font-size:10px;color:var(--dim);margin-bottom:14px">PATTERN CONFIDENCE</div>
+      <div class="section-header">SIMILARITIES</div>
+      <table class="compare-table" id="compare-similarities">
+        <tr><th>Factor</th><th>Average</th><th>Consistency</th></tr>
+      </table>
+      <div class="section-header">DIFFERENCES</div>
+      <table class="compare-table" id="compare-differences">
+        <tr><th>Factor</th><th>Min</th><th>Max</th><th>Spread</th></tr>
+      </table>
+      <div class="section-header">TIME PATTERNS (UTC HOUR)</div>
+      <div class="heatmap" id="compare-heatmap"></div>
+      <div class="section-header">BEST ENTRY CONDITIONS</div>
+      <div id="compare-entry" style="font-size:11px;color:var(--text);line-height:1.6;margin-bottom:14px"></div>
+      <div class="section-header">⬡ GROQ AI SUMMARY</div>
+      <div class="ai-insight" id="compare-ai-result">
+        <div class="ai-label">⬡ PATTERN ANALYSIS</div>
+        <div id="compare-ai-text">Run analysis to see AI summary</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- TAB 5: HISTORY -->
+<div id="tab-history" class="tab-content">
+  <div class="section-header">HISTORICAL ANALYSIS</div>
+  <div style="font-size:10px;color:var(--dim);margin-bottom:12px">
+    Data logged 24/7 by background scanner. More data = better analysis.
+  </div>
+  <div class="preset-pills">
+    <div class="pill" onclick="setHistoryPreset(30,this)">30MIN</div>
+    <div class="pill" onclick="setHistoryPreset(60,this)">1HR</div>
+    <div class="pill" onclick="setHistoryPreset(120,this)">2HR</div>
+    <div class="pill" onclick="setHistoryPreset(360,this)">6HR</div>
+    <div class="pill" onclick="setHistoryPreset(720,this)">12HR</div>
+    <div class="pill active" onclick="setHistoryPreset(1440,this)">24HR</div>
+    <div class="pill" onclick="setHistoryPreset(4320,this)">3 DAYS</div>
+    <div class="pill" onclick="setHistoryPreset(10080,this)">7 DAYS</div>
+  </div>
+  <div class="custom-range">
+    <input type="datetime-local" class="datetime-input" id="history-start" />
+    <input type="datetime-local" class="datetime-input" id="history-end" />
+    <button class="btn btn-primary" onclick="analyzeWindow()">ANALYZE WINDOW</button>
+  </div>
+  <div id="history-results" style="display:none">
+    <div class="history-stats">
+      <div class="stat-box"><div class="stat-val" id="h-total">0</div><div class="stat-lbl">RECORDS</div></div>
+      <div class="stat-box"><div class="stat-val" id="h-coins">0</div><div class="stat-lbl">COINS</div></div>
+      <div class="stat-box"><div class="stat-val" id="h-pumps">0</div><div class="stat-lbl">PUMPS</div></div>
+      <div class="stat-box"><div class="stat-val" id="h-suspicious">0</div><div class="stat-lbl">SUSPICIOUS</div></div>
+      <div class="stat-box"><div class="stat-val" id="h-sentiment">--</div><div class="stat-lbl">SENTIMENT</div></div>
+      <div class="stat-box"><div class="stat-val" id="h-session">--</div><div class="stat-lbl">TOP SESSION</div></div>
+    </div>
+    <div class="market-section">
+      <div class="section-header">TOP GAINERS IN WINDOW</div>
+      <div class="top-list" id="h-gainers"></div>
+    </div>
+    <div class="market-section">
+      <div class="section-header">TOP LOSERS IN WINDOW</div>
+      <div class="top-list" id="h-losers"></div>
+    </div>
+    <div class="market-section">
+      <div class="section-header">HIGHEST VOLUME</div>
+      <div class="top-list" id="h-volume"></div>
+    </div>
+    <div class="market-section">
+      <div class="section-header">NARRATIVE TRENDS IN WINDOW</div>
+      <div class="top-list" id="h-narratives"></div>
+    </div>
+    <div class="pump-profile">
+      <div class="pump-profile-title">⚡ PUMP PROFILE — CONDITIONS BEFORE PUMPS</div>
+      <div id="h-pump-profile">
+        <div style="color:var(--dim);font-size:10px">Not enough pump data in this window</div>
+      </div>
+    </div>
+    <div class="market-section">
+      <div class="section-header">SESSION BREAKDOWN</div>
+      <div class="session-breakdown" id="h-session-breakdown"></div>
+    </div>
+    <div class="market-section">
+      <div class="section-header">BEST TRADING HOURS (ALL TIME)</div>
+      <div class="heatmap" id="h-best-heatmap"></div>
+    </div>
+    <div class="market-section">
+      <div class="section-header">PUMP HEATMAP THIS WINDOW</div>
+      <div class="heatmap" id="h-window-heatmap"></div>
+    </div>
+    <div class="lowmc-profile">
+      <div class="pump-profile-title">🔬 LOW MC COIN PUMP PROFILE</div>
+      <div id="h-lowmc-profile">
+        <div style="color:var(--dim);font-size:10px">Loading low MC data...</div>
+      </div>
+    </div>
+    <div class="market-section">
+      <div class="section-header">⬡ GROQ AI WINDOW ANALYSIS</div>
+      <div class="ai-insight" id="h-ai-result">
+        <div class="ai-label">⬡ WINDOW ANALYSIS</div>
+        <div id="h-ai-text">Click Analyze Window to generate AI analysis</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- TAB 6: AI CHAT -->
+<div id="tab-chat" class="tab-content" style="padding:0">
+  <div id="chat-messages"></div>
+  <div id="chat-suggestions" class="suggestions">
+    <div style="font-size:10px;color:var(--dim);padding:0 0 6px 0">SUGGESTED QUESTIONS</div>
+    <button class="suggestion-btn" onclick="sendSuggestion(this.textContent)">What is moving on CoinEx right now?</button>
+    <button class="suggestion-btn" onclick="sendSuggestion(this.textContent)">Any low MC coins showing momentum?</button>
+    <button class="suggestion-btn" onclick="sendSuggestion(this.textContent)">What session is best for CoinEx trading?</button>
+    <button class="suggestion-btn" onclick="sendSuggestion(this.textContent)">Explain the current order book sentiment</button>
+    <button class="suggestion-btn" onclick="sendSuggestion(this.textContent)">What do today's top CoinEx gainers have in common?</button>
+  </div>
+  <div class="chat-input-wrap">
+    <textarea class="chat-input" id="chat-input" rows="2" placeholder="Ask about CoinEx markets..."></textarea>
+    <div style="display:flex;flex-direction:column;gap:6px">
+      <button class="btn btn-primary btn-sm" onclick="sendChat()">SEND</button>
+      <button class="btn btn-secondary btn-sm" onclick="clearChat()">CLR</button>
+    </div>
+  </div>
+</div>
+
+<!-- TAB 7: MY PERFORMANCE -->
+<div id="tab-perf" class="tab-content">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+    <div class="section-header" style="margin-bottom:0">MY PERFORMANCE</div>
+    <button class="btn btn-primary btn-sm" onclick="aiPerfSummary()">⬡ AI SUMMARY</button>
+  </div>
+  <div id="perf-ai-result" class="ai-insight" style="display:none;margin-bottom:14px">
+    <div class="ai-label">⬡ PERFORMANCE ANALYSIS</div>
+    <div id="perf-ai-text"></div>
+  </div>
+  <div class="timeframe-pills">
+    <div class="pill" onclick="setPerfTimeframe(2,this)">2M</div>
+    <div class="pill" onclick="setPerfTimeframe(5,this)">5M</div>
+    <div class="pill" onclick="setPerfTimeframe(10,this)">10M</div>
+    <div class="pill" onclick="setPerfTimeframe(15,this)">15M</div>
+    <div class="pill" onclick="setPerfTimeframe(30,this)">30M</div>
+    <div class="pill active" onclick="setPerfTimeframe(60,this)">1H</div>
+    <div class="pill" onclick="setPerfTimeframe(120,this)">2H</div>
+    <div class="pill" onclick="setPerfTimeframe(360,this)">6H</div>
+    <div class="pill" onclick="setPerfTimeframe(720,this)">12H</div>
+    <div class="pill" onclick="setPerfTimeframe(1440,this)">24H</div>
+    <div class="pill" onclick="setPerfTimeframe(2880,this)">48H</div>
+    <div class="pill" onclick="setPerfCustom()">CUSTOM</div>
+  </div>
+  <div id="local-db-status" class="banner banner-info" style="margin-bottom:10px">
+    🖥 Local DB: Checking...
+  </div>
+  <div class="perf-cols">
+    <div class="perf-col">
+      <div class="perf-col-title">🏆 TOP GAINERS</div>
+      <div id="perf-gainers"></div>
+    </div>
+    <div class="perf-col">
+      <div class="perf-col-title">📉 TOP LOSERS</div>
+      <div id="perf-losers"></div>
+    </div>
+    <div class="perf-col">
+      <div class="perf-col-title">➡ MIDDLERS</div>
+      <div id="perf-middles"></div>
+    </div>
+  </div>
+  <div id="perf-timeline" style="display:none">
+    <div class="section-header" id="perf-timeline-title">COIN TIMELINE</div>
+    <div class="timeline-wrap">
+      <canvas class="timeline-canvas" id="perf-timeline-canvas"></canvas>
+    </div>
+  </div>
+  <div class="pump-profile">
+    <div class="pump-profile-title">MY PUMP PROFILE</div>
+    <div id="perf-pump-profile">
+      <div style="color:var(--dim);font-size:10px">Accumulating data...</div>
+    </div>
+  </div>
+  <div class="market-section">
+    <div class="section-header">MISS OF THE DAY</div>
+    <div id="perf-misses">
+      <div style="color:var(--dim);font-size:10px">Coins that pumped but scored low in your scanner</div>
+    </div>
+  </div>
+  <div class="market-section">
+    <div class="section-header">FALSE SIGNALS</div>
+    <div id="perf-false">
+      <div style="color:var(--dim);font-size:10px">Coins that scored high but went nowhere</div>
+    </div>
+  </div>
+  <div class="market-section">
+    <div class="section-header">SESSION PERFORMANCE</div>
+    <div class="session-breakdown" id="perf-sessions"></div>
+  </div>
+  <div class="lowmc-profile">
+    <div class="pump-profile-title">LOW MC PERFORMANCE TRACKER</div>
+    <div id="perf-lowmc">
+      <div style="color:var(--dim);font-size:10px">Tracking low MC coin performance across sessions...</div>
+    </div>
+  </div>
+</div>
+
+</div><!-- END MAIN -->
+
+<!-- TAB BAR -->
+<div id="tabbar">
+  <button class="tab-btn active" onclick="switchTab('scanner',this)">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+    </svg>SCAN
+  </button>
+  <button class="tab-btn" onclick="switchTab('monitor',this)">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/>
+      <line x1="12" y1="17" x2="12" y2="21"/>
+    </svg>MONITOR
+  </button>
+  <button class="tab-btn" onclick="switchTab('market',this)">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+    </svg>MARKET
+  </button>
+  <button class="tab-btn" onclick="switchTab('compare',this)">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/>
+      <line x1="6" y1="20" x2="6" y2="14"/>
+    </svg>COMPARE
+  </button>
+  <button class="tab-btn" onclick="switchTab('history',this)">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+    </svg>HISTORY
+  </button>
+  <button class="tab-btn" onclick="switchTab('chat',this)">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+    </svg>AI CHAT
+  </button>
+  <button class="tab-btn" onclick="switchTab('perf',this)">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/>
+      <polyline points="17 6 23 6 23 12"/>
+    </svg>MY PERF
+  </button>
+</div>
+
+<!-- SETTINGS MODAL -->
+<div class="modal-overlay hidden" id="settings-modal">
+  <div class="modal">
+    <div class="modal-title">SETTINGS<button class="modal-close" onclick="closeSettings()">✕</button></div>
+    <div class="form-group"><label class="form-label">MIN VOLUME 24H ($)</label>
+      <input class="form-input" id="set-min-vol" type="number" value="50000" /></div>
+    <div class="form-group"><label class="form-label">MIN 24H CHANGE (%)</label>
+      <input class="form-input" id="set-min-change" type="number" value="0" /></div>
+    <div class="form-group"><label class="form-label">SCORE THRESHOLD</label>
+      <input class="form-input" id="set-threshold" type="number" value="40" /></div>
+    <div class="form-group"><label class="form-label">MIN MARKET CAP ($)</label>
+      <input class="form-input" id="set-min-mc" type="number" value="0" /></div>
+    <div class="form-group"><label class="form-label">SESSION FILTER</label>
+      <select class="form-input" id="set-session">
+        <option value="all">All Sessions</option>
+        <option value="Asia">Asia Only</option>
+        <option value="Europe">Europe Only</option>
+        <option value="US">US Only</option>
+      </select></div>
+    <div class="toggle-row"><span style="font-size:11px;color:var(--text)">Suspicious Filter</span>
+      <div class="toggle on" id="toggle-suspicious" onclick="toggleSetting('suspicious')"></div></div>
+    <div class="toggle-row"><span style="font-size:11px;color:var(--text)">Sound Alerts</span>
+      <div class="toggle" id="toggle-sound" onclick="toggleSetting('sound')"></div></div>
+    <div class="toggle-row"><span style="font-size:11px;color:var(--text)">Narrative Scoring</span>
+      <div class="toggle on" id="toggle-narrative" onclick="toggleSetting('narrative')"></div></div>
+    <div class="toggle-row"><span style="font-size:11px;color:var(--text)">Self-Learning</span>
+      <div class="toggle on" id="toggle-learning" onclick="toggleSetting('learning')"></div></div>
+    <div style="margin-top:14px">
+      <button class="btn btn-primary" style="width:100%" onclick="saveSettings()">SAVE SETTINGS</button>
+    </div>
+  </div>
+</div>
+
+<!-- DATA MANAGEMENT MODAL -->
+<div class="modal-overlay hidden" id="data-modal">
+  <div class="modal">
+    <div class="modal-title">DATA MANAGEMENT<button class="modal-close" onclick="closeDataMgmt()">✕</button></div>
+    <div class="storage-meter">
+      <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--text)">
+        <span>SUPABASE STORAGE</span><span id="storage-pct-label">--</span>
+      </div>
+      <div class="storage-track">
+        <div class="storage-fill storage-ok" id="storage-fill" style="width:0%"></div>
+      </div>
+      <div style="display:flex;justify-content:space-between;font-size:9px;color:var(--dim)">
+        <span id="storage-mb-label">-- MB used</span><span>500 MB free tier</span>
+      </div>
+    </div>
+    <div class="banner banner-info" id="sync-status-banner" style="margin-bottom:12px">
+      🖥 Local Sync: Checking localhost:3001...
+    </div>
+    <div style="display:flex;gap:8px;margin-bottom:14px">
+      <button class="btn btn-secondary btn-sm" onclick="triggerSync()">⟳ SYNC NOW</button>
+      <button class="btn btn-secondary btn-sm" onclick="loadStorageStats()">↺ REFRESH</button>
+    </div>
+    <div class="section-header">EXPORT DATA</div>
+    <div class="form-group"><label class="form-label">DATE RANGE</label>
+      <input type="datetime-local" class="form-input" id="export-start" style="margin-bottom:6px" />
+      <input type="datetime-local" class="form-input" id="export-end" /></div>
+    <div class="form-group"><label class="form-label">MIN SCORE</label>
+      <input class="form-input" id="export-min-score" type="number" value="0" /></div>
+    <div class="form-group"><label class="form-label">CATEGORY</label>
+      <select class="form-input" id="export-category">
+        <option value="all">All</option>
+        <option value="winners">Winners (20%+ gain)</option>
+        <option value="losers">Losers (20%+ loss)</option>
+        <option value="suspicious">Suspicious</option>
+      </select></div>
+    <div class="form-group"><label class="form-label">SESSION</label>
+      <select class="form-input" id="export-session">
+        <option value="">All Sessions</option>
+        <option value="Asia">Asia</option>
+        <option value="Europe">Europe</option>
+        <option value="US">US</option>
+      </select></div>
+    <div class="btn-row" style="margin-bottom:16px">
+      <button class="btn btn-success btn-sm" onclick="exportData('csv')">↓ CSV</button>
+      <button class="btn btn-success btn-sm" onclick="exportData('json')">↓ JSON</button>
+    </div>
+    <div class="section-header">DELETE DATA</div>
+    <div class="form-group"><label class="form-label">DELETE RECORDS BEFORE DATE</label>
+      <input type="datetime-local" class="form-input" id="delete-before" /></div>
+    <div class="form-group"><label class="form-label">DELETE IF SCORE BELOW</label>
+      <input class="form-input" id="delete-min-score" type="number" value="0" /></div>
+    <div id="delete-preview" style="font-size:10px;color:var(--warning);margin-bottom:8px"></div>
+    <div class="btn-row">
+      <button class="btn btn-secondary btn-sm" onclick="previewDelete()">PREVIEW</button>
+      <button class="btn btn-danger btn-sm" onclick="confirmDelete()">DELETE</button>
+    </div>
+    <div class="section-header" style="margin-top:14px">AUTO CLEANUP RULES</div>
+    <div class="toggle-row"><span style="font-size:11px;color:var(--text)">Delete inactive coins after 7 days</span>
+      <div class="toggle on" id="toggle-auto7" onclick="toggleSetting('auto7')"></div></div>
+    <div class="toggle-row"><span style="font-size:11px;color:var(--text)">Keep only top performers per week</span>
+      <div class="toggle" id="toggle-keeptop" onclick="toggleSetting('keeptop')"></div></div>
+    <div class="toggle-row"><span style="font-size:11px;color:var(--text)">Alert at 70% storage</span>
+      <div class="toggle on" id="toggle-storagealert" onclick="toggleSetting('storagealert')"></div></div>
+  </div>
+</div>
+
+<div id="toast-container"></div>
+
+<script>
+const APP={
+  profile:'balanced',launched:false,paused:false,filter:'all',
+  scanResults:[],monitors:{},monitorIntervals:{},chatHistory:[],
+  compareTags:[],perfTimeframe:60,marketTimeframe:'1h',
+  historyStart:null,historyEnd:null,bgState:{},localDBOnline:false,
+  settings:{minVol:50000,minChange:0,threshold:40,minMC:0,session:'all',
+    suspicious:true,sound:false,narrative:true,learning:true,
+    auto7:true,keeptop:false,storagealert:true},
+  scanInterval:null,bgSyncInterval:null,marketInterval:null,previewData:null
+};
+const PROFILES={
+  conservative:{minVol:500000,minChange:10,threshold:65,minMC:0},
+  balanced:{minVol:50000,minChange:0,threshold:40,minMC:0},
+  degen:{minVol:0,minChange:-999,threshold:20,minMC:0}
+};
+function fmt(n,d=2){if(n===null||n===undefined||isNaN(n))return'--';return parseFloat(n).toFixed(d)}
+function fmtLarge(n){if(!n||isNaN(n))return'--';if(n>=1e9)return'$'+(n/1e9).toFixed(2)+'B';if(n>=1e6)return'$'+(n/1e6).toFixed(2)+'M';if(n>=1e3)return'$'+(n/1e3).toFixed(1)+'K';return'$'+n.toFixed(2)}
+function fmtPct(n){if(n===null||n===undefined||isNaN(n))return'--';const v=parseFloat(n);return(v>=0?'+':'')+v.toFixed(2)+'%'}
+function pctClass(n){return parseFloat(n)>=0?'pos':'neg'}
+function toast(msg,type='info'){const el=document.createElement('div');el.className=`toast ${type}`;el.textContent=msg;document.getElementById('toast-container').appendChild(el);setTimeout(()=>el.remove(),3500)}
+function scoreClass(s){if(s>=70)return'high';if(s>=40)return'mid';return'low'}
+function cardTopClass(s){if(s>=70)return'card-top-green';if(s>=40)return'card-top-amber';return'card-top-red'}
+function tagClass(tag){const b=['VOL SURGE','BUY PRESSURE','NEAR HIGH','MOMENTUM','PATTERN MATCH','PEAK HOUR','PRIME TIME','NEW LISTING'];const r=['SELL PRESSURE','ALREADY PUMPED','QUIET HOUR'];const w=['NEAR LOW'];if(b.includes(tag))return'bullish-tag';if(r.includes(tag))return'bearish-tag';if(w.includes(tag))return'warning-tag';return''}
+async function apiFetch(url){try{const r=await fetch(url);return await r.json()}catch(e){return null}}
+async function apiPost(url,body){try{const r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});return await r.json()}catch(e){return null}}
+function updateHeaderClock(){const now=new Date();const h=now.getUTCHours();const m=String(now.getUTCMinutes()).padStart(2,'0');const s=String(now.getUTCSeconds()).padStart(2,'0');document.getElementById('utc-time').textContent=`UTC ${h}:${m}:${s}`;const badge=document.getElementById('session-badge');if(h>=0&&h<8){badge.textContent='ASIA';badge.className='session-badge session-asia'}else if(h>=8&&h<16){badge.textContent='EUROPE';badge.className='session-badge session-europe'}else{badge.textContent='US';badge.className='session-badge session-us'}}
+setInterval(updateHeaderClock,1000);updateHeaderClock();
+function switchTab(name,btn){document.querySelectorAll('.tab-content').forEach(t=>t.classList.remove('active'));document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));document.getElementById('tab-'+name).classList.add('active');btn.classList.add('active');if(name==='market')refreshMarket();if(name==='perf')loadPerformance();if(name==='history')checkLocalDB()}
+function selectProfile(p){APP.profile=p;document.querySelectorAll('.profile-card').forEach(c=>c.classList.remove('selected'));event.currentTarget.classList.add('selected')}
+function launchScanner(){const p=PROFILES[APP.profile];APP.settings.minVol=p.minVol;APP.settings.minChange=p.minChange;APP.settings.threshold=p.threshold;APP.launched=true;document.getElementById('setup-screen').style.display='none';document.getElementById('scanner-dashboard').style.display='block';startScanLoop();startBGSync();toast('Scanner launched — '+APP.profile.toUpperCase()+' profile','success')}
+async function startScanLoop(){await runScan();APP.scanInterval=setInterval(runScan,30000)}
+async function runScan(){if(APP.paused)return;try{const data=await apiFetch('/api/scanner/results');if(!data||!data.winners)return;let results=data.winners;results=results.filter(c=>{if(c.volume24h<APP.settings.minVol)return false;if(c.priceChange24h<APP.settings.minChange)return false;if(c.score<APP.settings.threshold)return false;if(c.mc<APP.settings.minMC)return false;if(APP.settings.suspicious&&c.isSuspicious)return false;if(APP.settings.session!=='all'&&c.session!==APP.settings.session)return false;return true});APP.scanResults=results;renderCoins(results);updateStats(results)}catch(e){console.error('Scan error:',e)}}
+async function scanNow(){toast('Fetching latest data...','info');await runScan()}
+function pauseResume(){APP.paused=!APP.paused;const btn=document.getElementById('pause-btn');btn.textContent=APP.paused?'▶ RESUME':'⏸ PAUSE';btn.className=APP.paused?'btn btn-success btn-sm':'btn btn-secondary btn-sm';toast(APP.paused?'Scanner paused (server still running)':'Scanner resumed','info')}
+function resetScanner(){if(!confirm('Reset scanner?'))return;APP.scanResults=[];APP.paused=false;document.getElementById('coin-list').innerHTML='';document.getElementById('pause-btn').textContent='⏸ PAUSE';toast('Scanner reset','info')}
+function setFilter(f,el){APP.filter=f;document.querySelectorAll('.filter-pills .pill').forEach(p=>p.classList.remove('active'));el.classList.add('active');renderCoins(APP.scanResults)}
+async function startBGSync(){await syncBGState();APP.bgSyncInterval=setInterval(syncBGState,30000)}
+async function syncBGState(){const data=await apiFetch('/api/bgstate');if(!data)return;APP.bgState=data;document.getElementById('scanner-status-text').textContent=`Server scanning · Last: ${data.lastScanTime?new Date(data.lastScanTime).toLocaleTimeString():'--'}`;document.getElementById('scanner-cycle-text').textContent=`Cycle ${data.scanCount||0} · ${data.session||'--'}`;document.getElementById('peak-banner').style.display=data.peakQuiet==='peak'?'flex':'none';document.getElementById('quiet-banner').style.display=data.peakQuiet==='quiet'?'flex':'none';const fp=data.fingerprint||{};document.getElementById('fp-mc').textContent=fp.avgMC?fmtLarge(fp.avgMC):'--';document.getElementById('fp-br').textContent=fp.avgBuyRatio?fmt(fp.avgBuyRatio,0)+'%':'--';document.getElementById('fp-va').textContent=fp.avgVolAccel?fmt(fp.avgVolAccel,1)+'x':'--';document.getElementById('fp-score').textContent=fp.avgScore?fmt(fp.avgScore,0):'--';document.getElementById('fp-count').textContent=fp.count||0;document.getElementById('fp-mult').textContent=data.timingMultiplier?data.timingMultiplier.toFixed(2)+'x':'1.0x';const health=await apiFetch('/api/health');if(health)document.getElementById('storage-warn-banner').style.display=health.storageWarn?'flex':'none'}
+function updateStats(results){document.getElementById('stat-pairs').textContent=results.length;document.getElementById('stat-signals').textContent=results.filter(c=>c.score>=60).length;document.getElementById('stat-winners').textContent=APP.bgState.fingerprint?.count||0;document.getElementById('stat-cycles').textContent=APP.bgState.scanCount||0;const avg=results.length?Math.round(results.reduce((a,b)=>a+b.score,0)/results.length):0;document.getElementById('stat-avgscore').textContent=avg}
+function filterResults(results){switch(APP.filter){case'high':return results.filter(c=>c.score>=70);case'mid':return results.filter(c=>c.score>=40&&c.score<70);case'signals':return results.filter(c=>c.score>=60&&c.tags&&c.tags.length>=2);default:return results}}
+function renderCoins(results){const list=document.getElementById('coin-list');const filtered=filterResults(results);if(filtered.length===0){list.innerHTML='<div style="color:var(--dim);font-size:11px;text-align:center;padding:30px">No coins match current filters</div>';return}list.innerHTML=filtered.map(c=>coinCardHTML(c)).join('')}
+function coinCardHTML(c){const sc=scoreClass(c.score);const tags=(c.tags||[]).map(t=>`<span class="tag ${tagClass(t)}">${t}</span>`).join('');const range=(c.high24h-c.low24h)||1;const distFromHigh=c.high24h>0?((c.high24h-c.lastPrice)/range*100):50;const nearHigh=distFromHigh<5;const nearLow=distFromHigh>85;return`<div class="coin-card" id="card-${c.market}"><div class="coin-card-top ${cardTopClass(c.score)}"></div><div class="coin-card-body"><div class="coin-header"><div class="score-ring ${sc}">${c.score}</div><div class="coin-name-block"><div class="coin-name">${c.name}${c.isNewListing?'<span class="new-badge">NEW</span>':''}</div><div class="coin-market">${c.market}</div><div class="coin-address" onclick="copyText('${c.market}')">${c.market} ⎘</div></div><span class="risk-badge ${c.isSuspicious?'high':''}">${c.isSuspicious?'⚠ SUSPICIOUS':'✓ OK'}</span></div><div class="metrics-grid"><div class="metric-box"><div class="metric-val ${pctClass(c.priceChange5m)}">${fmtPct(c.priceChange5m)}</div><div class="metric-lbl">Δ 5M</div></div><div class="metric-box"><div class="metric-val ${pctClass(c.priceChange1h)}">${fmtPct(c.priceChange1h)}</div><div class="metric-lbl">Δ 1H</div></div><div class="metric-box"><div class="metric-val ${pctClass(c.priceChange24h)}">${fmtPct(c.priceChange24h)}</div><div class="metric-lbl">Δ 24H</div></div><div class="metric-box"><div class="metric-val">${fmtLarge(c.volume24h)}</div><div class="metric-lbl">VOL 24H</div></div><div class="metric-box"><div class="metric-val">${fmtLarge(c.mc)}</div><div class="metric-lbl">MKT CAP</div></div><div class="metric-box"><div class="metric-val">${fmt(c.volAccel,1)}x</div><div class="metric-lbl">VOL ACCEL</div></div></div><div class="pressure-bar-wrap"><div class="pressure-label"><span>BUY ${Math.round(c.buyRatio||50)}%</span><span>SELL ${100-Math.round(c.buyRatio||50)}%</span></div><div class="pressure-track"><div class="pressure-fill" style="width:${c.buyRatio||50}%"></div></div></div><div style="display:flex;gap:8px;font-size:9px;color:var(--dim);margin-bottom:8px"><span>H: $${fmt(c.high24h,6)}</span><span>L: $${fmt(c.low24h,6)}</span><span>${nearHigh?'📈 NEAR HIGH':nearLow?'📉 NEAR LOW':''}</span></div><div class="tags-wrap">${tags}</div><div class="ai-insight" id="ai-${c.market}" style="display:none"><div class="ai-label">⬡ GROQ ANALYSIS</div><div id="ai-text-${c.market}">Loading...</div></div><div class="card-actions"><button class="btn btn-secondary btn-sm" onclick="loadCoinAI('${c.market}')">⬡ AI</button><button class="btn btn-secondary btn-sm" onclick="window.open('https://www.coinex.com/trading/${c.market}','_blank')">↗ COINEX</button><button class="btn btn-primary btn-sm" onclick="addToMonitorFromCard('${c.market}')">+ MONITOR</button></div></div></div>`}
+async function loadCoinAI(market){const coin=APP.scanResults.find(c=>c.market===market);if(!coin)return;const box=document.getElementById('ai-'+market);const txt=document.getElementById('ai-text-'+market);box.style.display='block';txt.textContent='Analyzing...';const res=await apiPost('/api/ai',{mode:'coin',coin});txt.textContent=res?.text||'Analysis failed'}
+function copyText(text){navigator.clipboard.writeText(text).then(()=>toast('Copied: '+text,'success'))}
+function addToMonitorFromCard(market){document.getElementById('monitor-input').value=market;switchTab('monitor',document.querySelectorAll('.tab-btn')[1]);previewCoin()}
+async function previewCoin(){const input=document.getElementById('monitor-input').value.trim().toUpperCase();if(!input)return toast('Enter a market symbol','error');const market=input.includes('USDT')?input:input+'USDT';toast('Fetching '+market+'...','info');const[tickerData,depthData]=await Promise.all([apiFetch('/api/coinex/ticker'),apiFetch('/api/coinex/depth?market='+market)]);if(!tickerData?.data)return toast('Could not fetch ticker data','error');const ticker=tickerData.data.find(t=>t.market===market);if(!ticker)return toast('Market not found: '+market,'error');const lastPrice=parseFloat(ticker.last)||0;const high24h=parseFloat(ticker.high)||0;const low24h=parseFloat(ticker.low)||0;const volume24h=parseFloat(ticker.vol)||0;const change24h=parseFloat(ticker.change_rate)*100||0;APP.previewData={market,name:market.replace('USDT',''),lastPrice,high24h,low24h,volume24h,priceChange24h:change24h};document.getElementById('preview-name').textContent=market.replace('USDT','');document.getElementById('preview-market').textContent=market;document.getElementById('preview-ch24').textContent=fmtPct(change24h);document.getElementById('preview-ch24').className='metric-val '+pctClass(change24h);document.getElementById('preview-vol').textContent=fmtLarge(volume24h);document.getElementById('preview-price').textContent='$'+fmt(lastPrice,6);document.getElementById('preview-high').textContent='$'+fmt(high24h,6);document.getElementById('preview-low').textContent='$'+fmt(low24h,6);if(depthData?.data){const bids=depthData.data.bids||[];const asks=depthData.data.asks||[];const bidVol=bids.reduce((a,b)=>a+parseFloat(b[1]||0),0);const askVol=asks.reduce((a,b)=>a+parseFloat(b[1]||0),0);const total=bidVol+askVol;const bidPct=total>0?Math.round((bidVol/total)*100):50;APP.previewData.buyRatio=bidPct;document.getElementById('preview-br').textContent=bidPct+'%';document.getElementById('preview-ob').style.display='block';document.getElementById('preview-ob-pct').textContent=bidPct+'%';document.getElementById('preview-ob-fill').style.width=bidPct+'%'}else{document.getElementById('preview-br').textContent='--'}document.getElementById('preview-dex-btn').onclick=()=>window.open('https://www.coinex.com/trading/'+market,'_blank');document.getElementById('monitor-preview').style.display='block'}
+async function analyzePreviewCoin(){if(!APP.previewData)return;const txt=document.getElementById('preview-ai-text');const box=document.getElementById('preview-ai-result');box.style.display='block';txt.textContent='Analyzing...';const res=await apiPost('/api/ai',{mode:'coin',coin:APP.previewData});txt.textContent=res?.text||'Analysis failed'}
+function clearPreview(){APP.previewData=null;document.getElementById('monitor-preview').style.display='none';document.getElementById('monitor-input').value='';document.getElementById('preview-ai-result').style.display='none'}
+function addToMonitor(){if(!APP.previewData)return;const market=APP.previewData.market;if(APP.monitors[market])return toast(market+' already monitored','warn');const interval=parseInt(document.getElementById('monitor-interval').value);APP.monitors[market]={...APP.previewData,interval,lastAI:null};renderMonitorCard(market);APP.monitorIntervals[market]=setInterval(()=>refreshMonitor(market),interval);toast(market+' added to monitor','success');clearPreview()}
+function renderMonitorCard(market){const list=document.getElementById('monitor-list');const existing=document.querySelector('[data-monitor]');if(existing&&existing.textContent.includes('No coins'))list.innerHTML='';const div=document.createElement('div');div.className='monitor-card';div.id='monitor-'+market;div.innerHTML=`<div class="monitor-card-header"><div><div class="coin-name">${market.replace('USDT','')} <span class="new-badge">${market}</span></div><div style="font-size:9px;color:var(--dim)" id="mtime-${market}">--</div></div><div style="display:flex;gap:6px;align-items:center"><select class="interval-select" onchange="changeMonitorInterval('${market}',this.value)"><option value="5000">5s</option><option value="10000">10s</option><option value="30000" selected>30s</option><option value="60000">1m</option><option value="120000">2m</option></select><button class="btn btn-danger btn-sm" onclick="removeMonitor('${market}')">✕</button></div></div><div class="metrics-grid" id="mmetrics-${market}"><div class="metric-box"><div class="metric-val" id="mprice-${market}">--</div><div class="metric-lbl">PRICE</div></div><div class="metric-box"><div class="metric-val" id="mch24-${market}">--</div><div class="metric-lbl">Δ 24H</div></div><div class="metric-box"><div class="metric-val" id="mvol-${market}">--</div><div class="metric-lbl">VOL 24H</div></div><div class="metric-box"><div class="metric-val" id="mhigh-${market}">--</div><div class="metric-lbl">24H HIGH</div></div><div class="metric-box"><div class="metric-val" id="mlow-${market}">--</div><div class="metric-lbl">24H LOW</div></div><div class="metric-box"><div class="metric-val" id="mbr-${market}">--</div><div class="metric-lbl">BUY RATIO</div></div></div><div class="pressure-bar-wrap"><div class="pressure-label"><span>BUY</span><span id="mbr-pct-${market}">50%</span><span>SELL</span></div><div class="pressure-track"><div class="pressure-fill" id="mbr-fill-${market}" style="width:50%"></div></div></div><div id="malert-${market}" class="banner banner-warn" style="display:none"></div><div class="ai-insight" id="mai-${market}" style="display:none"><div class="ai-label">⬡ GROQ ANALYSIS</div><div id="mai-text-${market}">Loading...</div></div><div class="card-actions"><button class="btn btn-primary btn-sm" onclick="manualMonitorAI('${market}')">⬡ AI NOW</button><button class="btn btn-secondary btn-sm" onclick="window.open('https://www.coinex.com/trading/${market}','_blank')">↗ COINEX</button></div>`;list.appendChild(div);refreshMonitor(market)}
+async function refreshMonitor(market){const mon=APP.monitors[market];if(!mon)return;const[tickerData,depthData]=await Promise.all([apiFetch('/api/coinex/ticker'),apiFetch('/api/coinex/depth?market='+market)]);if(!tickerData?.data)return;const ticker=tickerData.data.find(t=>t.market===market);if(!ticker)return;const lastPrice=parseFloat(ticker.last)||0;const high24h=parseFloat(ticker.high)||0;const low24h=parseFloat(ticker.low)||0;const volume24h=parseFloat(ticker.vol)||0;const change24h=parseFloat(ticker.change_rate)*100||0;let buyRatio=50;if(depthData?.data){const bids=depthData.data.bids||[];const asks=depthData.data.asks||[];const bidVol=bids.reduce((a,b)=>a+parseFloat(b[1]||0),0);const askVol=asks.reduce((a,b)=>a+parseFloat(b[1]||0),0);const total=bidVol+askVol;buyRatio=total>0?Math.round((bidVol/total)*100):50}const safe=(id,val)=>{const el=document.getElementById(id);if(el)el.textContent=val};const safeClass=(id,cls)=>{const el=document.getElementById(id);if(el)el.className='metric-val '+cls};safe('mprice-'+market,'$'+fmt(lastPrice,6));safe('mch24-'+market,fmtPct(change24h));safeClass('mch24-'+market,pctClass(change24h));safe('mvol-'+market,fmtLarge(volume24h));safe('mhigh-'+market,'$'+fmt(high24h,6));safe('mlow-'+market,'$'+fmt(low24h,6));safe('mbr-'+market,buyRatio+'%');safe('mbr-pct-'+market,buyRatio+'%');safe('mtime-'+market,'Updated: '+new Date().toLocaleTimeString());const fill=document.getElementById('mbr-fill-'+market);if(fill)fill.style.width=buyRatio+'%';const card=document.getElementById('monitor-'+market);if(card)card.classList.toggle('bullish-border',buyRatio>60&&change24h>0);const prev=mon.lastPrice;const prevBR=mon.lastBuyRatio||50;const prevVol=mon.lastVol||volume24h;const priceMovePct=prev?Math.abs((lastPrice-prev)/prev*100):0;const volSurge=prevVol>0?volume24h/prevVol:1;let alertMsg='';if(buyRatio<40&&prevBR>=40)alertMsg='⚠ Buy ratio dropped below 40%';else if(volSurge>2)alertMsg='⚡ Volume spiked 2x';else if(priceMovePct>10)alertMsg=`📈 Price moved ${fmtPct(priceMovePct)}`;if(alertMsg&&!mon.alertShown){const alertEl=document.getElementById('malert-'+market);if(alertEl){alertEl.style.display='flex';alertEl.textContent=alertMsg}mon.alertShown=true;manualMonitorAI(market);if(APP.settings.sound)playAlert()}mon.lastPrice=lastPrice;mon.lastBuyRatio=buyRatio;mon.lastVol=volume24h;mon.priceChange24h=change24h}
+async function manualMonitorAI(market){const mon=APP.monitors[market];if(!mon)return;const box=document.getElementById('mai-'+market);const txt=document.getElementById('mai-text-'+market);if(!box||!txt)return;box.style.display='block';txt.textContent='Analyzing...';const res=await apiPost('/api/ai',{mode:'coin',coin:mon});txt.textContent=res?.text||'Analysis failed';mon.lastAI=res?.text}
+function changeMonitorInterval(market,val){if(APP.monitorIntervals[market])clearInterval(APP.monitorIntervals[market]);APP.monitorIntervals[market]=setInterval(()=>refreshMonitor(market),parseInt(val))}
+function removeMonitor(market){if(APP.monitorIntervals[market])clearInterval(APP.monitorIntervals[market]);delete APP.monitors[market];delete APP.monitorIntervals[market];const el=document.getElementById('monitor-'+market);if(el)el.remove();if(Object.keys(APP.monitors).length===0)document.getElementById('monitor-list').innerHTML='<div style="color:var(--dim);font-size:11px;text-align:center;padding:20px">No coins being monitored.</div>'}
+function playAlert(){try{const ctx=new AudioContext();const osc=ctx.createOscillator();osc.connect(ctx.destination);osc.frequency.value=880;osc.start();osc.stop(ctx.currentTime+0.15)}catch(e){}}
+function setMarketTimeframe(tf,el){APP.marketTimeframe=tf;document.querySelectorAll('#tab-market .timeframe-pills .pill').forEach(p=>p.classList.remove('active'));el.classList.add('active');refreshMarket()}
+async function refreshMarket(){try{const tickerData=await apiFetch('/api/coinex/ticker');if(!tickerData?.data)return;const tickers=tickerData.data.filter(t=>t.market&&t.market.endsWith('USDT')&&!t.market.startsWith('USDT'));const bulls=tickers.filter(t=>parseFloat(t.change_rate)>0).length;const bullPct=Math.round((bulls/tickers.length)*100);document.getElementById('sentiment-fill').style.width=bullPct+'%';document.getElementById('sentiment-bull').textContent=bullPct;document.getElementById('sentiment-bear').textContent=100-bullPct;const sorted=[...tickers].map(t=>({name:t.market.replace('USDT',''),market:t.market,change:parseFloat(t.change_rate)*100,vol:parseFloat(t.vol)||0,price:parseFloat(t.last)||0})).sort((a,b)=>b.change-a.change);document.getElementById('market-gainers').innerHTML=sorted.slice(0,5).map(t=>topItemHTML(t.name,t.change,t.vol)).join('');document.getElementById('market-losers').innerHTML=sorted.slice(-5).reverse().map(t=>topItemHTML(t.name,t.change,t.vol)).join('');const avgVol=sorted.reduce((a,b)=>a+b.vol,0)/sorted.length;const breakouts=sorted.filter(t=>t.vol>avgVol*3).sort((a,b)=>b.vol-a.vol).slice(0,5);document.getElementById('market-breakouts').innerHTML=breakouts.map(t=>topItemHTML(t.name,t.change,t.vol)).join('')||'<div style="color:var(--dim);font-size:10px">No breakouts detected</div>';const stable=sorted.filter(t=>Math.abs(t.change)<3&&t.vol>avgVol*0.5).slice(0,5);document.getElementById('market-stable').innerHTML=stable.map(t=>topItemHTML(t.name,t.change,t.vol)).join('')||'<div style="color:var(--dim);font-size:10px">No stable coins</div>';renderMarketNarratives(sorted);renderNewListings();loadLowMCProfile();loadMarketHeatmap();renderPatterns()}catch(e){console.error('Market refresh error:',e)}}
+function topItemHTML(name,change,vol){return`<div class="top-item"><div><div class="top-item-name">${name}</div><div style="font-size:9px;color:var(--dim)">${fmtLarge(vol)}</div></div><div class="top-item-change ${pctClass(change)}">${fmtPct(change)}</div></div>`}
+function renderMarketNarratives(tickers){const NARR=['AI','PEPE','DOGE','TRUMP','MOON','PUMP','CAT','DOG','MEME','AGENT','BTC','SOL'];const results=NARR.map(n=>{const matches=tickers.filter(t=>t.name.toUpperCase().includes(n));if(matches.length===0)return null;const avgGain=matches.reduce((a,b)=>a+b.change,0)/matches.length;return{name:n,count:matches.length,avgGain}}).filter(Boolean).sort((a,b)=>b.avgGain-a.avgGain);document.getElementById('market-narratives').innerHTML=results.slice(0,6).map(r=>`<div class="top-item"><div><div class="top-item-name">${r.name}</div><div style="font-size:9px;color:var(--dim)">${r.count} coins</div></div><div class="top-item-change ${pctClass(r.avgGain)}">${fmtPct(r.avgGain)}</div></div>`).join('')||'<div style="color:var(--dim);font-size:10px">No narrative data</div>'}
+function renderNewListings(){const listings=APP.bgState.newListings||[];const el=document.getElementById('market-new-listings');if(listings.length===0){el.innerHTML='<div style="color:var(--dim);font-size:10px">No new listings detected yet</div>';return}el.innerHTML=listings.slice(-5).reverse().map(l=>`<div class="top-item"><div><div class="top-item-name">${l.name} <span class="new-badge">NEW</span></div><div style="font-size:9px;color:var(--dim)">${new Date(l.seenAt).toLocaleTimeString()}</div></div><button class="btn btn-secondary btn-sm" onclick="document.getElementById('monitor-input').value='${l.market}';switchTab('monitor',document.querySelectorAll('.tab-btn')[1]);previewCoin()">MONITOR</button></div>`).join('')}
+async function loadLowMCProfile(){const data=await apiFetch('/api/history/lowmc');const el=document.getElementById('lowmc-live-profile');if(!data?.profile){el.innerHTML='<div style="color:var(--dim);font-size:10px">Accumulating low MC pump data...</div>';return}const p=data.profile;el.innerHTML=`<div style="font-size:10px;color:var(--text);line-height:1.8"><div>📊 Pumps logged: <span style="color:var(--bullish)">${p.count}</span></div><div>💰 Avg MC: <span style="color:var(--accent)">${fmtLarge(p.avgMC)}</span></div><div>📈 Avg Gain: <span style="color:var(--bullish)">${fmtPct(p.avgMaxGain||0)}</span></div><div>📦 Avg Vol: <span style="color:var(--white)">${fmtLarge(p.avgVolume)}</span></div><div>🎯 Avg Score: <span style="color:var(--accent)">${fmt(p.avgScore,0)}</span></div></div><div class="session-breakdown" style="margin-top:10px"><div class="session-box"><div class="session-box-name">ASIA</div><div class="session-box-val" style="color:var(--accent)">${p.sessionBreakdown?.Asia||0}</div></div><div class="session-box"><div class="session-box-name">EUROPE</div><div class="session-box-val" style="color:var(--bullish)">${p.sessionBreakdown?.Europe||0}</div></div><div class="session-box"><div class="session-box-name">US</div><div class="session-box-val" style="color:var(--warning)">${p.sessionBreakdown?.US||0}</div></div></div>`}
+async function loadMarketHeatmap(){const data=await apiFetch('/api/history/heatmap');renderHeatmap('market-heatmap',data?.heatmap||Array(24).fill(0))}
+function renderHeatmap(elId,heatmap){const el=document.getElementById(elId);if(!el)return;const max=Math.max(...heatmap,1);el.innerHTML=heatmap.map((v,i)=>{const intensity=v/max;const bg=intensity>0.7?`rgba(20,241,149,${0.3+intensity*0.5})`:intensity>0.3?`rgba(245,158,11,${0.2+intensity*0.4})`:`rgba(61,80,112,${0.2+intensity*0.3})`;return`<div class="heatmap-cell ${v>0?'active':''}" style="background:${bg}" title="UTC ${i}:00 — ${v} pumps"><span style="font-size:7px">${i}</span></div>`}).join('')}
+function renderPatterns(){const fp=APP.bgState.fingerprint;if(!fp||fp.count<3)return;document.getElementById('market-winner-patterns').innerHTML=`<div style="font-size:10px;color:var(--text);line-height:1.8"><div>✓ Avg MC: ${fmtLarge(fp.avgMC)}</div><div>✓ Buy Ratio: ${fmt(fp.avgBuyRatio,0)}%+</div><div>✓ Vol Accel: ${fmt(fp.avgVolAccel,1)}x+</div><div>✓ Min Score: ${fmt(fp.avgScore,0)}</div><div style="font-size:9px;color:var(--dim);margin-top:4px">Based on ${fp.count} winner samples</div></div>`}
+async function aiMarketSummary(){const box=document.getElementById('market-ai-result');const txt=document.getElementById('market-ai-text');box.style.display='block';txt.textContent='Generating market summary...';const context={topGainers:APP.scanResults.slice(0,5).map(c=>c.name+' '+fmtPct(c.priceChange24h)),session:APP.bgState.session,peakQuiet:APP.bgState.peakQuiet,scanCount:APP.bgState.scanCount,fingerprint:APP.bgState.fingerprint};const res=await apiPost('/api/ai',{mode:'chat',marketContext:context,messages:[{role:'user',content:'Give me a concise market summary of current CoinEx conditions.'}]});txt.textContent=res?.text||'Summary failed'}
+APP.marketInterval=setInterval(()=>{if(document.getElementById('tab-market').classList.contains('active'))refreshMarket()},60000);
+function addCompareTag(){const input=document.getElementById('compare-input');let val=input.value.trim().toUpperCase();if(!val)return;if(!val.endsWith('USDT'))val+='USDT';if(APP.compareTags.length>=20)return toast('Max 20 coins','warn');if(APP.compareTags.includes(val))return toast('Already added','warn');APP.compareTags.push(val);input.value='';renderCompareTags()}
+function renderCompareTags(){const el=document.getElementById('compare-tags');if(APP.compareTags.length===0){el.innerHTML='<span style="color:var(--dim);font-size:10px;align-self:center">Add up to 20 coins</span>';return}el.innerHTML=APP.compareTags.map(t=>`<div class="compare-tag">${t}<span class="remove" onclick="removeCompareTag('${t}')">✕</span></div>`).join('')}
+function removeCompareTag(t){APP.compareTags=APP.compareTags.filter(x=>x!==t);renderCompareTags()}
+async function runCompare(){if(APP.compareTags.length<2)return toast('Add at least 2 coins','warn');toast('Running pattern analysis...','info');const tickerData=await apiFetch('/api/coinex/ticker');if(!tickerData?.data)return toast('Could not fetch data','error');const coins=APP.compareTags.map(market=>{const t=tickerData.data.find(x=>x.market===market);if(!t)return null;return{market,name:market.replace('USDT',''),change24h:parseFloat(t.change_rate)*100||0,vol:parseFloat(t.vol)||0,price:parseFloat(t.last)||0,high:parseFloat(t.high)||0,low:parseFloat(t.low)||0}}).filter(Boolean);if(coins.length<2)return toast('Could not fetch data for coins','error');const avgChange=coins.reduce((a,b)=>a+b.change24h,0)/coins.length;const avgVol=coins.reduce((a,b)=>a+b.vol,0)/coins.length;const avgPrice=coins.reduce((a,b)=>a+b.price,0)/coins.length;const changeSpread=Math.max(...coins.map(c=>c.change24h))-Math.min(...coins.map(c=>c.change24h));const volSpread=Math.max(...coins.map(c=>c.vol))-Math.min(...coins.map(c=>c.vol));const confidence=Math.max(0,Math.min(100,100-(changeSpread*0.5)-(coins.length<5?20:0)));document.getElementById('compare-confidence').textContent=Math.round(confidence);document.getElementById('compare-results').style.display='block';document.getElementById('compare-similarities').innerHTML=`<tr><th>Factor</th><th>Average</th><th>Consistency</th></tr><tr><td>24h Change</td><td>${fmtPct(avgChange)}</td><td>${changeSpread<10?'HIGH':changeSpread<30?'MEDIUM':'LOW'}</td></tr><tr><td>Volume</td><td>${fmtLarge(avgVol)}</td><td>${volSpread/avgVol<1?'HIGH':'VARIED'}</td></tr><tr><td>Price</td><td>$${fmt(avgPrice,4)}</td><td>VARIED</td></tr>`;document.getElementById('compare-differences').innerHTML=`<tr><th>Factor</th><th>Min</th><th>Max</th><th>Spread</th></tr><tr><td>24h Change</td><td>${fmtPct(Math.min(...coins.map(c=>c.change24h)))}</td><td>${fmtPct(Math.max(...coins.map(c=>c.change24h)))}</td><td>${fmtPct(changeSpread)}</td></tr><tr><td>Volume</td><td>${fmtLarge(Math.min(...coins.map(c=>c.vol)))}</td><td>${fmtLarge(Math.max(...coins.map(c=>c.vol)))}</td><td>--</td></tr>`;document.getElementById('compare-entry').innerHTML=`Best entry when: 24h change near ${fmtPct(avgChange)}, volume above ${fmtLarge(avgVol*0.8)}, buy ratio above 55%.`;const heatmapData=Array(24).fill(0);const h=new Date().getUTCHours();heatmapData[h]=coins.length;renderHeatmap('compare-heatmap',heatmapData);const aiTxt=document.getElementById('compare-ai-text');aiTxt.textContent='Generating AI summary...';const res=await apiPost('/api/ai',{mode:'chat',marketContext:{coins,avgChange,avgVol,confidence},messages:[{role:'user',content:`Compare these CoinEx coins: ${coins.map(c=>c.name).join(', ')}. Avg 24h change: ${fmtPct(avgChange)}. What do they have in common? Best entry conditions? Be specific and concise.`}]});aiTxt.textContent=res?.text||'Analysis failed'}
+function setHistoryPreset(minutes,el){document.querySelectorAll('.preset-pills .pill').forEach(p=>p.classList.remove('active'));el.classList.add('active');const end=new Date();const start=new Date(end-minutes*60000);document.getElementById('history-start').value=start.toISOString().slice(0,16);document.getElementById('history-end').value=end.toISOString().slice(0,16);APP.historyStart=start.toISOString();APP.historyEnd=end.toISOString();analyzeWindow()}
+async function analyzeWindow(){const start=document.getElementById('history-start').value;const end=document.getElementById('history-end').value;if(!start||!end)return toast('Select a time range','warn');APP.historyStart=new Date(start).toISOString();APP.historyEnd=new Date(end).toISOString();toast('Analyzing window...','info');const[summary,heatmap,bestwindow,lowmc,sessions]=await Promise.all([apiFetch(`/api/history/summary?start=${APP.historyStart}&end=${APP.historyEnd}`),apiFetch(`/api/history/heatmap`),apiFetch(`/api/history/bestwindow`),apiFetch(`/api/history/lowmc`),apiFetch(`/api/history/sessions`)]);document.getElementById('history-results').style.display='block';if(summary){document.getElementById('h-total').textContent=summary.totalRecords||0;document.getElementById('h-coins').textContent=summary.uniqueCoins||0;document.getElementById('h-pumps').textContent=summary.pumps||0;document.getElementById('h-suspicious').textContent=summary.suspicious||0;const sb=summary.sessionBreakdown||{};const topSess=Object.entries(sb).sort((a,b)=>b[1]-a[1])[0];document.getElementById('h-session').textContent=topSess?topSess[0]:'--';const bullish=summary.topGainers?.filter(c=>c.maxGain>0).length||0;const total=summary.uniqueCoins||1;document.getElementById('h-sentiment').textContent=bullish/total>0.6?'BULL':bullish/total<0.4?'BEAR':'NEUTRAL';document.getElementById('h-gainers').innerHTML=(summary.topGainers||[]).slice(0,5).map(c=>topItemHTML(c.name,c.maxGain,c.maxVolume)).join('')||'<div style="color:var(--dim);font-size:10px">No data</div>';document.getElementById('h-losers').innerHTML=(summary.topLosers||[]).slice(0,5).map(c=>topItemHTML(c.name,c.minGain,c.maxVolume)).join('')||'<div style="color:var(--dim);font-size:10px">No data</div>';document.getElementById('h-volume').innerHTML=(summary.highestVolume||[]).slice(0,5).map(c=>topItemHTML(c.name,c.maxGain,c.maxVolume)).join('')||'<div style="color:var(--dim);font-size:10px">No data</div>';const narrs=Object.entries(summary.narratives||{}).sort((a,b)=>b[1].avgGain-a[1].avgGain).slice(0,6);document.getElementById('h-narratives').innerHTML=narrs.map(([n,d])=>`<div class="top-item"><div><div class="top-item-name">${n}</div><div style="font-size:9px;color:var(--dim)">${d.count} coins</div></div><div class="top-item-change ${pctClass(d.avgGain)}">${fmtPct(d.avgGain)}</div></div>`).join('')||'<div style="color:var(--dim);font-size:10px">No narrative data</div>';if(summary.pumpProfile){const pp=summary.pumpProfile;document.getElementById('h-pump-profile').innerHTML=`<div class="checklist-item"><span class="check-icon">✓</span>Avg gain before pump: <strong style="color:var(--bullish)">${fmtPct(pp.avgMaxGain)}</strong></div><div class="checklist-item"><span class="check-icon">✓</span>Avg volume: <strong style="color:var(--white)">${fmtLarge(pp.avgVolume)}</strong></div><div class="checklist-item"><span class="check-icon">✓</span>Avg score at pump: <strong style="color:var(--accent)">${fmt(pp.avgScore,0)}</strong></div><div class="checklist-item"><span class="check-icon">✓</span>Total pumps in window: <strong style="color:var(--bullish)">${pp.count}</strong></div>`}document.getElementById('h-session-breakdown').innerHTML=['Asia','Europe','US'].map(s=>`<div class="session-box"><div class="session-box-name">${s.toUpperCase()}</div><div class="session-box-val" style="color:var(--accent)">${(summary.sessionBreakdown||{})[s]||0}</div><div style="font-size:8px;color:var(--dim)">records</div></div>`).join('')}renderHeatmap('h-best-heatmap',bestwindow?.hours?.map(h=>h.pumps)||Array(24).fill(0));renderHeatmap('h-window-heatmap',heatmap?.heatmap||Array(24).fill(0));if(lowmc?.profile){const p=lowmc.profile;document.getElementById('h-lowmc-profile').innerHTML=`<div style="font-size:10px;color:var(--text);line-height:1.8"><div class="checklist-item"><span class="check-icon">✓</span>MC range: <strong>${fmtLarge(p.avgMC*0.5)} – ${fmtLarge(p.avgMC*1.5)}</strong></div><div class="checklist-item"><span class="check-icon">✓</span>Avg volume before pump: <strong>${fmtLarge(p.avgVolume)}</strong></div><div class="checklist-item"><span class="check-icon">✓</span>Avg buy ratio: <strong>${fmt(p.avgBuyRatio,0)}%</strong></div><div class="checklist-item"><span class="check-icon">✓</span>Best session: <strong style="color:var(--bullish)">${Object.entries(p.sessionBreakdown||{}).sort((a,b)=>b[1]-a[1])[0]?.[0]||'--'}</strong></div><div class="checklist-item"><span class="check-icon">✓</span>Total low MC pumps logged: <strong>${p.count}</strong></div></div>`}const aiTxt=document.getElementById('h-ai-text');aiTxt.textContent='Generating AI analysis...';const res=await apiPost('/api/ai',{mode:'window',windowData:{summary,start:APP.historyStart,end:APP.historyEnd}});aiTxt.textContent=res?.text||'Analysis failed'}
+async function checkLocalDB(){try{const res=await fetch('http://localhost:3001/status');if(res.ok){const data=await res.json();APP.localDBOnline=true;document.getElementById('local-db-status').textContent=`🖥 Local DB: Connected — ${data.totalLocalRecords.toLocaleString()} records · ${data.dbSizeMB}MB · Last sync: ${data.lastSyncTime?new Date(data.lastSyncTime).toLocaleTimeString():'--'}`;document.getElementById('local-db-status').className='banner banner-info'}else throw new Error()}catch{APP.localDBOnline=false;document.getElementById('local-db-status').textContent='🖥 Local DB: Offline — using cloud only. Run: node local-sync.js';document.getElementById('local-db-status').className='banner banner-warn'}}
+function buildMarketContext(){return{session:APP.bgState.session||'Unknown',peakQuiet:APP.bgState.peakQuiet||'normal',timingMultiplier:APP.bgState.timingMultiplier||1.0,scanCount:APP.bgState.scanCount||0,winnersCount:APP.bgState.winnersCount||0,fingerprint:APP.bgState.fingerprint||{},topCoins:APP.scanResults.slice(0,5).map(c=>`${c.name} ${fmtPct(c.priceChange24h)} score:${c.score}`),activeMonitors:Object.keys(APP.monitors),newListings:(APP.bgState.newListings||[]).map(l=>l.name)}}
+async function sendChat(){const input=document.getElementById('chat-input');const msg=input.value.trim();if(!msg)return;input.value='';sendSuggestion(msg)}
+async function sendSuggestion(msg){document.getElementById('chat-suggestions').style.display='none';appendChatMsg(msg,'user');APP.chatHistory.push({role:'user',content:msg});if(APP.chatHistory.length>16)APP.chatHistory=APP.chatHistory.slice(-16);const thinkingEl=appendChatMsg('Thinking...','ai');const res=await apiPost('/api/ai',{mode:'chat',messages:APP.chatHistory,marketContext:buildMarketContext()});thinkingEl.textContent=res?.text||'No response';APP.chatHistory.push({role:'assistant',content:res?.text||''})}
+function appendChatMsg(text,role){const container=document.getElementById('chat-messages');const el=document.createElement('div');el.className=`chat-msg ${role}`;el.textContent=text;container.appendChild(el);container.scrollTop=container.scrollHeight;return el}
+function clearChat(){APP.chatHistory=[];document.getElementById('chat-messages').innerHTML='';document.getElementById('chat-suggestions').style.display='flex'}
+document.getElementById('chat-input').addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendChat()}});
+function setPerfTimeframe(minutes,el){APP.perfTimeframe=minutes;document.querySelectorAll('#tab-perf .timeframe-pills .pill').forEach(p=>p.classList.remove('active'));el.classList.add('active');loadPerformance()}
+function setPerfCustom(){const start=prompt('Start datetime (YYYY-MM-DDTHH:MM):');const end=prompt('End datetime (YYYY-MM-DDTHH:MM):');if(start&&end){APP.perfCustomStart=new Date(start).toISOString();APP.perfCustomEnd=new Date(end).toISOString();APP.perfTimeframe=-1;loadPerformance()}}
+async function loadPerformance(){await checkLocalDB();const end=new Date().toISOString();const start=APP.perfTimeframe===-1?APP.perfCustomStart:new Date(Date.now()-APP.perfTimeframe*60000).toISOString();let data=null;if(APP.localDBOnline){try{const res=await fetch(`http://localhost:3001/history/deep?start=${start}&end=${end}&limit=2000`);if(res.ok)data=(await res.json()).data}catch(e){}}if(!data){const res=await apiFetch(`/api/history/window?start=${start}&end=${end}`);data=res?.data||[]}if(!data||data.length===0){document.getElementById('perf-gainers').innerHTML='<div style="color:var(--dim);font-size:10px">No data in timeframe</div>';document.getElementById('perf-losers').innerHTML='';document.getElementById('perf-middles').innerHTML='';return}const coins={};data.forEach(row=>{const n=row.name||row.market;if(!coins[n])coins[n]={name:n,market:row.market,rows:[]};coins[n].rows.push(row)});const summaries=Object.values(coins).map(c=>{const gains=c.rows.map(r=>r.price_change_24h||0);const vols=c.rows.map(r=>r.volume_24h||0);const scores=c.rows.map(r=>r.score||0);return{name:c.name,market:c.market,maxGain:Math.max(...gains),minGain:Math.min(...gains),avgVol:vols.reduce((a,b)=>a+b,0)/vols.length,avgScore:scores.reduce((a,b)=>a+b,0)/scores.length,rows:c.rows}});const gainers=[...summaries].sort((a,b)=>b.maxGain-a.maxGain).slice(0,10);const losers=[...summaries].sort((a,b)=>a.minGain-b.minGain).slice(0,10);const middles=[...summaries].filter(c=>Math.abs(c.maxGain)<10&&c.avgVol>1000).sort((a,b)=>b.avgVol-a.avgVol).slice(0,10);document.getElementById('perf-gainers').innerHTML=gainers.map(c=>perfItemHTML(c,c.maxGain,'pos')).join('')||'<div style="color:var(--dim);font-size:10px">No data</div>';document.getElementById('perf-losers').innerHTML=losers.map(c=>perfItemHTML(c,c.minGain,'neg')).join('')||'<div style="color:var(--dim);font-size:10px">No data</div>';document.getElementById('perf-middles').innerHTML=middles.map(c=>perfItemHTML(c,c.maxGain,'')).join('')||'<div style="color:var(--dim);font-size:10px">No data</div>';const pumps=gainers.filter(c=>c.maxGain>20);if(pumps.length>0){const avgGain=pumps.reduce((a,b)=>a+b.maxGain,0)/pumps.length;const avgScore=pumps.reduce((a,b)=>a+b.avgScore,0)/pumps.length;const avgVol=pumps.reduce((a,b)=>a+b.avgVol,0)/pumps.length;document.getElementById('perf-pump-profile').innerHTML=`<div class="checklist-item"><span class="check-icon">✓</span>Avg peak gain: <strong style="color:var(--bullish)">${fmtPct(avgGain)}</strong></div><div class="checklist-item"><span class="check-icon">✓</span>Avg score at entry: <strong style="color:var(--accent)">${fmt(avgScore,0)}</strong></div><div class="checklist-item"><span class="check-icon">✓</span>Avg volume: <strong>${fmtLarge(avgVol)}</strong></div><div class="checklist-item"><span class="check-icon">✓</span>Pumps in window: <strong>${pumps.length}</strong></div>`}const misses=summaries.filter(c=>c.maxGain>30&&c.avgScore<40);document.getElementById('perf-misses').innerHTML=misses.length?misses.slice(0,5).map(c=>`<div class="top-item"><div><div class="top-item-name">${c.name}</div><div style="font-size:9px;color:var(--dim)">Avg score: ${fmt(c.avgScore,0)}</div></div><div class="top-item-change pos">${fmtPct(c.maxGain)}</div></div>`).join(''):'<div style="color:var(--dim);font-size:10px">No missed pumps — good coverage!</div>';const falseSignals=summaries.filter(c=>c.avgScore>60&&c.maxGain<5);document.getElementById('perf-false').innerHTML=falseSignals.length?falseSignals.slice(0,5).map(c=>`<div class="top-item"><div><div class="top-item-name">${c.name}</div><div style="font-size:9px;color:var(--dim)">Avg score: ${fmt(c.avgScore,0)}</div></div><div class="top-item-change neg">${fmtPct(c.maxGain)}</div></div>`).join(''):'<div style="color:var(--dim);font-size:10px">No false signals detected</div>';await loadSessionPerf();await loadLowMCPerf()}
+async function loadSessionPerf(){let data=null;if(APP.localDBOnline){try{const res=await fetch('http://localhost:3001/history/sessions');if(res.ok)data=(await res.json()).breakdown}catch(e){}}if(!data){const res=await apiFetch('/api/history/sessions');data=res?.breakdown}if(!data)return;document.getElementById('perf-sessions').innerHTML=['Asia','Europe','US'].map(s=>{const d=data[s]||{count:0,avgScore:0,avgGain:0,pumps:0};return`<div class="session-box"><div class="session-box-name">${s.toUpperCase()}</div><div class="session-box-val" style="color:${d.avgGain>0?'var(--bullish)':'var(--bearish)'}">${fmtPct(d.avgGain)}</div><div style="font-size:8px;color:var(--dim)">${d.pumps} pumps</div></div>`}).join('')}
+async function loadLowMCPerf(){let data=null;if(APP.localDBOnline){try{const res=await fetch('http://localhost:3001/history/lowmc');if(res.ok)data=await res.json()}catch(e){}}if(!data){const res=await apiFetch('/api/history/lowmc');data=res}if(!data?.profile)return;const p=data.profile;document.getElementById('perf-lowmc').innerHTML=`<div style="font-size:10px;color:var(--text);line-height:1.8"><div>Total low MC pumps: <strong style="color:var(--bullish)">${p.count}</strong></div><div>Avg MC at pump: <strong>${fmtLarge(p.avgMC)}</strong></div><div>Avg buy ratio: <strong>${fmt(p.avgBuyRatio,0)}%</strong></div><div>Best session: <strong style="color:var(--bullish)">${Object.entries(p.sessionBreakdown||{}).sort((a,b)=>b[1]-a[1])[0]?.[0]||'--'}</strong></div></div>`}
+function perfItemHTML(c,val,cls){return`<div class="perf-item" onclick="showCoinTimeline('${c.name}','${c.market}')"><div class="perf-item-name">${c.name}</div><div class="perf-item-val ${cls}">${fmtPct(val)}</div></div>`}
+async function showCoinTimeline(name,market){document.getElementById('perf-timeline').style.display='block';document.getElementById('perf-timeline-title').textContent=name+' TIMELINE';let data=null;if(APP.localDBOnline){try{const res=await fetch(`http://localhost:3001/history/token?name=${name}`);if(res.ok)data=(await res.json()).data}catch(e){}}if(!data){const res=await apiFetch(`/api/history/token?name=${name}`);data=res?.data}if(!data||data.length===0)return toast('No timeline data for '+name,'warn');drawTimeline(data)}
+function drawTimeline(rows){const canvas=document.getElementById('perf-timeline-canvas');canvas.width=canvas.offsetWidth||300;canvas.height=120;const ctx=canvas.getContext('2d');ctx.clearRect(0,0,canvas.width,canvas.height);const gains=rows.map(r=>r.price_change_24h||0);const min=Math.min(...gains);const max=Math.max(...gains);const range=(max-min)||1;const W=canvas.width;const H=canvas.height;ctx.strokeStyle='#14f195';ctx.lineWidth=1.5;ctx.beginPath();rows.forEach((r,i)=>{const x=(i/(rows.length-1))*W;const y=H-((r.price_change_24h-min)/range)*(H-10)-5;i===0?ctx.moveTo(x,y):ctx.lineTo(x,y)});ctx.stroke();ctx.fillStyle='rgba(20,241,149,0.08)';ctx.lineTo(W,H);ctx.lineTo(0,H);ctx.closePath();ctx.fill()}
+async function aiPerfSummary(){const box=document.getElementById('perf-ai-result');const txt=document.getElementById('perf-ai-text');box.style.display='block';txt.textContent='Analyzing your performance...';const gainers=document.getElementById('perf-gainers').textContent.slice(0,200);const res=await apiPost('/api/ai',{mode:'chat',marketContext:buildMarketContext(),messages:[{role:'user',content:`Analyze my CoinEx trading performance. Top gainers: ${gainers}. What patterns do they share? What should I look for next time? Be specific.`}]});txt.textContent=res?.text||'Analysis failed'}
+function openSettings(){document.getElementById('settings-modal').classList.remove('hidden')}
+function closeSettings(){document.getElementById('settings-modal').classList.add('hidden')}
+function saveSettings(){APP.settings.minVol=parseFloat(document.getElementById('set-min-vol').value)||0;APP.settings.minChange=parseFloat(document.getElementById('set-min-change').value)||0;APP.settings.threshold=parseFloat(document.getElementById('set-threshold').value)||0;APP.settings.minMC=parseFloat(document.getElementById('set-min-mc').value)||0;APP.settings.session=document.getElementById('set-session').value;closeSettings();toast('Settings saved','success');renderCoins(APP.scanResults)}
+function toggleSetting(key){APP.settings[key]=!APP.settings[key];const el=document.getElementById('toggle-'+key);if(el)el.classList.toggle('on',APP.settings[key])}
+async function openDataMgmt(){document.getElementById('data-modal').classList.remove('hidden');await loadStorageStats();await checkLocalDB();updateSyncBanner()}
+function closeDataMgmt(){document.getElementById('data-modal').classList.add('hidden')}
+async function loadStorageStats(){const data=await apiFetch('/api/history/storage');if(!data)return;const pct=parseFloat(data.pct);document.getElementById('storage-pct-label').textContent=pct.toFixed(1)+'%';document.getElementById('storage-mb-label').textContent=data.estimatedMB+' MB used';const fill=document.getElementById('storage-fill');fill.style.width=Math.min(pct,100)+'%';fill.className='storage-fill '+(pct>=80?'storage-danger':pct>=70?'storage-warn':'storage-ok')}
+function updateSyncBanner(){const banner=document.getElementById('sync-status-banner');if(APP.localDBOnline){banner.className='banner banner-info';banner.textContent='🖥 Local Sync: Connected to localhost:3001'}else{banner.className='banner banner-warn';banner.textContent='🖥 Local Sync: Offline. Run: node local-sync.js on your laptop'}}
+async function triggerSync(){if(!APP.localDBOnline)return toast('Local sync not running','error');try{await fetch('http://localhost:3001/sync/now');toast('Sync triggered','success');await loadStorageStats()}catch(e){toast('Sync failed','error')}}
+async function exportData(format){const start=document.getElementById('export-start').value;const end=document.getElementById('export-end').value;const minScore=document.getElementById('export-min-score').value||0;const category=document.getElementById('export-category').value;const session=document.getElementById('export-session').value;const base=APP.localDBOnline?'http://localhost:3001':null;if(!base)return toast('Local sync required for export','warn');let url=`${base}/export?format=${format}&minScore=${minScore}&category=${category}`;if(start)url+=`&start=${new Date(start).toISOString()}`;if(end)url+=`&end=${new Date(end).toISOString()}`;if(session)url+=`&session=${session}`;window.open(url,'_blank')}
+async function previewDelete(){const before=document.getElementById('delete-before').value;const minScore=document.getElementById('delete-min-score').value||0;if(!before)return toast('Select a date','warn');if(!APP.localDBOnline)return toast('Local sync required for delete operations','warn');const url=`http://localhost:3001/cleanup?preview=true&before=${new Date(before).toISOString()}&minScore=${minScore}`;try{const res=await fetch(url,{method:'DELETE'});const data=await res.json();document.getElementById('delete-preview').textContent=`⚠ This will delete ${data.wouldDelete} records`}catch(e){toast('Preview failed','error')}}
+async function confirmDelete(){const before=document.getElementById('delete-before').value;const minScore=document.getElementById('delete-min-score').value||0;if(!before)return toast('Select a date','warn');if(!APP.localDBOnline)return toast('Local sync required','warn');if(!confirm('Permanently delete these records?'))return;const url=`http://localhost:3001/cleanup?before=${new Date(before).toISOString()}&minScore=${minScore}`;try{const res=await fetch(url,{method:'DELETE'});const data=await res.json();toast(`Deleted ${data.deleted} records`,'success');document.getElementById('delete-preview').textContent='';await loadStorageStats()}catch(e){toast('Delete failed','error')}}
+checkLocalDB();
+</script>
+</body>
+</html>
