@@ -3,6 +3,7 @@
 const express = require('express');
 const fetch = require('node-fetch');
 const { createClient } = require('@supabase/supabase-js');
+const ws = require('ws');
 const path = require('path');
 const cors = require('cors');
 
@@ -18,12 +19,14 @@ const SUPABASE_KEY = process.env.SUPABASE_KEY;
 const PORT = process.env.PORT || 3000;
 
 // ─── SUPABASE ──────────────────────────────────────────────────────────────
-const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
+const supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
+  realtime: { transport: ws }
+});
 
 // ─── CONSTANTS ─────────────────────────────────────────────────────────────
 const COINEX_BASE = 'https://api.coinex.com/v2';
 const SCAN_INTERVAL_MS = 30000;
-const FULL_SNAPSHOT_INTERVAL = 20; // every 20 cycles = 10 minutes
+const FULL_SNAPSHOT_INTERVAL = 20;
 const STORAGE_WARN_PCT = 70;
 const STORAGE_CLEANUP_PCT = 80;
 const SUPABASE_FREE_BYTES = 500 * 1024 * 1024;
@@ -176,7 +179,7 @@ function scoreCoin(coin) {
   else if (br > 60) score += 10;
   else if (br > 55) score += 5;
 
-  // Distance from 24h low (0-10) — near low = recovery setup
+  // Distance from 24h low (0-10)
   if (coin.low24h > 0 && coin.lastPrice > 0 && coin.high24h > coin.low24h) {
     const range = coin.high24h - coin.low24h;
     const distFromLow = (coin.lastPrice - coin.low24h) / range;
@@ -185,7 +188,7 @@ function scoreCoin(coin) {
     else if (distFromLow < 0.5) score += 3;
   }
 
-  // Distance from 24h high (0-10) — near high = breakout
+  // Distance from 24h high (0-10)
   if (coin.high24h > 0 && coin.lastPrice > 0 && coin.high24h > coin.low24h) {
     const range = coin.high24h - coin.low24h;
     const distFromHigh = (coin.high24h - coin.lastPrice) / range;
@@ -286,7 +289,6 @@ async function runAutoCleanup() {
   console.log('Running auto cleanup...');
   try {
     const cutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
-    // Keep top performers and suspicious (for learning) — delete inactive old rows
     await supabase
       .from('coinex_scan_logs')
       .delete()
@@ -306,7 +308,6 @@ async function backgroundScan() {
     const isFullSnapshot = state.cycleCount % FULL_SNAPSHOT_INTERVAL === 0;
     const session = getCurrentSession();
 
-    // Fetch all tickers
     const tickerData = await coinexGet('/spot/ticker');
     if (!tickerData?.data) return;
 
@@ -327,30 +328,25 @@ async function backgroundScan() {
         const volume24h = parseFloat(t.vol) || 0;
         const priceChange24h = parseFloat(t.change_rate) * 100 || 0;
 
-        // Estimate 1h volume from stored state
         const prevVol = state.lastVolumes[market] || volume24h;
         const volume1h = Math.max(0, volume24h - prevVol);
         state.lastVolumes[market] = volume24h;
 
-        // Volume acceleration
         const avgHourlyVol = volume24h / 24;
         const volAccel = avgHourlyVol > 0 ? volume1h / avgHourlyVol : 0;
 
-        // Estimate buy ratio from price movement
         const prevPrice = state.lastPrices[market] || lastPrice;
         const priceChange5m = prevPrice > 0 ? ((lastPrice - prevPrice) / prevPrice) * 100 : 0;
         state.lastPrices[market] = lastPrice;
         const buyRatio = Math.min(100, Math.max(0, 50 + priceChange5m * 3));
         const priceChange1h = priceChange24h * 0.08;
 
-        // Market cap estimate
         const mc = lastPrice * (volume24h / Math.max(lastPrice, 0.000001)) * 10;
 
         const suspicious = isSuspicious({
           priceChange24h, volume24h, buyRatio, lastPrice
         });
 
-        // New listing detection
         const isNewListing = !state.seenMarkets.has(market);
         if (isNewListing) {
           state.seenMarkets.add(market);
@@ -370,7 +366,6 @@ async function backgroundScan() {
         coin.tags = getSignalTags(coin);
         processed.push(coin);
 
-        // Winner fingerprint update
         if (coin.score >= 70) updateFingerprint(coin);
 
       } catch (coinErr) {
@@ -378,10 +373,8 @@ async function backgroundScan() {
       }
     }
 
-    // Sort by score
     processed.sort((a, b) => b.score - a.score);
 
-    // Determine which to write
     const toWrite = [];
     const top50 = processed.slice(0, 50);
 
@@ -399,7 +392,6 @@ async function backgroundScan() {
       }
     }
 
-    // Batch write to Supabase
     if (toWrite.length > 0) {
       const rows = toWrite.map(c => ({
         market: c.market,
@@ -430,7 +422,6 @@ async function backgroundScan() {
     state.lastScanTimestamp = Date.now();
     state.winners = processed.slice(0, 100);
 
-    // Storage check every 10 cycles
     if (state.cycleCount % 10 === 0) await checkStorage();
 
     console.log(`Scan #${state.scanCount} | ${processed.length} pairs | ${toWrite.length} written | Session: ${session}`);
@@ -448,7 +439,6 @@ setInterval(backgroundScan, SCAN_INTERVAL_MS);
 // API ROUTES
 // ═══════════════════════════════════════════════════════════════════════════
 
-// Health
 app.get('/api/health', async (req, res) => {
   const storagePct = await checkStorage();
   res.json({
@@ -465,7 +455,6 @@ app.get('/api/health', async (req, res) => {
   });
 });
 
-// BG State
 app.get('/api/bgstate', (req, res) => {
   res.json({
     scanCount: state.scanCount,
@@ -480,7 +469,6 @@ app.get('/api/bgstate', (req, res) => {
   });
 });
 
-// CoinEx proxy routes
 app.get('/api/coinex/ticker', async (req, res) => {
   try {
     const data = await coinexGet('/spot/ticker');
@@ -513,18 +501,16 @@ app.get('/api/coinex/depth', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// Live winners from scanner
 app.get('/api/scanner/results', (req, res) => {
   res.json({ winners: state.winners, session: getCurrentSession() });
 });
 
-// History routes
 app.get('/api/history/window', async (req, res) => {
   try {
     const { start, end } = req.query;
-    const q = supabase.from('coinex_scan_logs').select('*').order('timestamp', { ascending: false }).limit(1000);
-    if (start) q.gte('timestamp', start);
-    if (end) q.lte('timestamp', end);
+    let q = supabase.from('coinex_scan_logs').select('*').order('timestamp', { ascending: false }).limit(1000);
+    if (start) q = q.gte('timestamp', start);
+    if (end) q = q.lte('timestamp', end);
     const { data, error } = await q;
     if (error) throw new Error(error.message);
     res.json({ data });
@@ -534,9 +520,9 @@ app.get('/api/history/window', async (req, res) => {
 app.get('/api/history/summary', async (req, res) => {
   try {
     const { start, end } = req.query;
-    const q = supabase.from('coinex_scan_logs').select('*');
-    if (start) q.gte('timestamp', start);
-    if (end) q.lte('timestamp', end);
+    let q = supabase.from('coinex_scan_logs').select('*');
+    if (start) q = q.gte('timestamp', start);
+    if (end) q = q.lte('timestamp', end);
     const { data, error } = await q;
     if (error) throw new Error(error.message);
 
@@ -588,14 +574,18 @@ app.get('/api/history/summary', async (req, res) => {
       count: pumps.length
     } : null;
 
+    const topGainers = [...summaries].sort((a, b) => b.maxGain - a.maxGain).slice(0, 10);
+    const topLosers = [...summaries].sort((a, b) => a.minGain - b.minGain).slice(0, 10);
+    const highestVolume = [...summaries].sort((a, b) => b.maxVolume - a.maxVolume).slice(0, 10);
+
     res.json({
       totalRecords: data.length,
       uniqueCoins: summaries.length,
       pumps: pumps.length,
       suspicious: summaries.filter(s => s.suspicious).length,
-      topGainers: summaries.slice(0, 10),
-      topLosers: summaries.sort((a, b) => a.minGain - b.minGain).slice(0, 10),
-      highestVolume: summaries.sort((a, b) => b.maxVolume - a.maxVolume).slice(0, 10),
+      topGainers,
+      topLosers,
+      highestVolume,
       narratives: narrativeSummary,
       sessionBreakdown,
       pumpProfile
@@ -719,7 +709,6 @@ app.get('/api/history/storage', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// ─── AI ROUTE ──────────────────────────────────────────────────────────────
 app.post('/api/ai', async (req, res) => {
   try {
     const { mode, coin, windowData, messages, marketContext } = req.body;
@@ -730,10 +719,10 @@ app.post('/api/ai', async (req, res) => {
     let max_tokens = 150;
 
     if (mode === 'coin') {
-      systemPrompt = `You are an expert CoinEx spot trader specializing in low MC momentum plays and volume breakouts. 
+      systemPrompt = `You are an expert CoinEx spot trader specializing in low MC momentum plays and volume breakouts.
 Analyze the coin data provided and respond with EXACTLY 3 lines:
 Line 1: Strongest signal
-Line 2: Biggest risk  
+Line 2: Biggest risk
 Line 3: Verdict — one of: BUY SMALL / WATCH / AVOID / TRAP
 No other text.`;
       userContent = `Coin: ${coin?.name} (${coin?.market})
@@ -794,7 +783,6 @@ Signal tags: ${(coin?.tags || []).join(', ')}`;
   }
 });
 
-// Serve index.html
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'index.html'));
 });
