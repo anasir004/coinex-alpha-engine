@@ -85,6 +85,227 @@ async function coinexGet(endpoint, params = {}) {
   return res.json();
 }
 
+// ─── TECHNICAL INDICATORS ──────────────────────────────────────────────────
+function calcRSI(closes, period = 14) {
+  if (closes.length < period + 1) return null;
+  let gains = 0, losses = 0;
+  for (let i = 1; i <= period; i++) {
+    const diff = closes[i] - closes[i - 1];
+    if (diff >= 0) gains += diff;
+    else losses += Math.abs(diff);
+  }
+  let avgGain = gains / period;
+  let avgLoss = losses / period;
+  for (let i = period + 1; i < closes.length; i++) {
+    const diff = closes[i] - closes[i - 1];
+    avgGain = (avgGain * (period - 1) + (diff > 0 ? diff : 0)) / period;
+    avgLoss = (avgLoss * (period - 1) + (diff < 0 ? Math.abs(diff) : 0)) / period;
+  }
+  if (avgLoss === 0) return 100;
+  const rs = avgGain / avgLoss;
+  return parseFloat((100 - 100 / (1 + rs)).toFixed(2));
+}
+
+function calcEMA(closes, period) {
+  if (closes.length < period) return null;
+  const k = 2 / (period + 1);
+  let ema = closes.slice(0, period).reduce((a, b) => a + b, 0) / period;
+  for (let i = period; i < closes.length; i++) {
+    ema = closes[i] * k + ema * (1 - k);
+  }
+  return parseFloat(ema.toFixed(8));
+}
+
+function calcMACD(closes) {
+  if (closes.length < 26) return null;
+  const ema12 = calcEMA(closes, 12);
+  const ema26 = calcEMA(closes, 26);
+  if (!ema12 || !ema26) return null;
+  const macdLine = parseFloat((ema12 - ema26).toFixed(8));
+  return { macdLine, ema12, ema26 };
+}
+
+function calcBollingerBands(closes, period = 20) {
+  if (closes.length < period) return null;
+  const slice = closes.slice(-period);
+  const avg = slice.reduce((a, b) => a + b, 0) / period;
+  const variance = slice.reduce((a, b) => a + Math.pow(b - avg, 2), 0) / period;
+  const std = Math.sqrt(variance);
+  return {
+    upper: parseFloat((avg + 2 * std).toFixed(8)),
+    middle: parseFloat(avg.toFixed(8)),
+    lower: parseFloat((avg - 2 * std).toFixed(8)),
+    bandwidth: parseFloat(((4 * std) / avg * 100).toFixed(2))
+  };
+}
+
+function calcVWAP(candles) {
+  if (!candles || candles.length === 0) return null;
+  let totalTPV = 0, totalVol = 0;
+  candles.forEach(c => {
+    const typical = (parseFloat(c[2]) + parseFloat(c[3]) + parseFloat(c[4])) / 3;
+    const vol = parseFloat(c[5]);
+    totalTPV += typical * vol;
+    totalVol += vol;
+  });
+  return totalVol > 0 ? parseFloat((totalTPV / totalVol).toFixed(8)) : null;
+}
+
+function calcSupportResistance(candles) {
+  if (!candles || candles.length < 10) return null;
+  const highs = candles.map(c => parseFloat(c[2]));
+  const lows = candles.map(c => parseFloat(c[3]));
+  const closes = candles.map(c => parseFloat(c[4]));
+  const currentPrice = closes[closes.length - 1];
+
+  // Find key levels
+  const sortedHighs = [...highs].sort((a, b) => b - a);
+  const sortedLows = [...lows].sort((a, b) => a - b);
+
+  const resistance1 = sortedHighs[0];
+  const resistance2 = sortedHighs[Math.floor(sortedHighs.length * 0.1)];
+  const support1 = sortedLows[0];
+  const support2 = sortedLows[Math.floor(sortedLows.length * 0.1)];
+
+  return {
+    resistance1: parseFloat(resistance1.toFixed(8)),
+    resistance2: parseFloat(resistance2.toFixed(8)),
+    support1: parseFloat(support1.toFixed(8)),
+    support2: parseFloat(support2.toFixed(8)),
+    currentPrice: parseFloat(currentPrice.toFixed(8)),
+    distToResistance: parseFloat(((resistance1 - currentPrice) / currentPrice * 100).toFixed(2)),
+    distToSupport: parseFloat(((currentPrice - support1) / currentPrice * 100).toFixed(2))
+  };
+}
+
+function calcVolumeProfile(candles) {
+  if (!candles || candles.length === 0) return null;
+  const hourly = {};
+  candles.forEach(c => {
+    const ts = parseInt(c[0]);
+    const hour = new Date(ts * 1000).getUTCHours();
+    const vol = parseFloat(c[5]);
+    hourly[hour] = (hourly[hour] || 0) + vol;
+  });
+  const sorted = Object.entries(hourly).sort((a, b) => b[1] - a[1]);
+  return {
+    byHour: hourly,
+    bestHour: sorted[0] ? parseInt(sorted[0][0]) : null,
+    worstHour: sorted[sorted.length - 1] ? parseInt(sorted[sorted.length - 1][0]) : null,
+    sorted: sorted.slice(0, 5).map(([h, v]) => ({ hour: parseInt(h), volume: v }))
+  };
+}
+
+function calcPumpPatterns(candles) {
+  if (!candles || candles.length < 24) return null;
+  const closes = candles.map(c => parseFloat(c[4]));
+  const vols = candles.map(c => parseFloat(c[5]));
+  const avgVol = vols.reduce((a, b) => a + b, 0) / vols.length;
+
+  const pumps = [];
+  for (let i = 1; i < closes.length; i++) {
+    const pct = (closes[i] - closes[i - 1]) / closes[i - 1] * 100;
+    const volSurge = vols[i] / avgVol;
+    if (pct > 5 && volSurge > 2) {
+      pumps.push({
+        index: i,
+        pct: parseFloat(pct.toFixed(2)),
+        volSurge: parseFloat(volSurge.toFixed(2)),
+        hour: new Date(parseInt(candles[i][0]) * 1000).getUTCHours()
+      });
+    }
+  }
+
+  return {
+    count: pumps.length,
+    avgMagnitude: pumps.length > 0
+      ? parseFloat((pumps.reduce((a, b) => a + b.pct, 0) / pumps.length).toFixed(2))
+      : 0,
+    pumps: pumps.slice(-5)
+  };
+}
+
+// ─── FULL COIN RESEARCH ────────────────────────────────────────────────────
+async function getFullCoinResearch(market, period = '1hour', limit = 168) {
+  const [tickerData, klineData, depthData] = await Promise.all([
+    coinexGet('/spot/ticker').catch(() => null),
+    coinexGet('/spot/kline', { market, price_type: 'last', period, limit }).catch(() => null),
+    coinexGet('/spot/depth', { market, limit: 20 }).catch(() => null)
+  ]);
+
+  const ticker = tickerData?.data?.find(t => t.market === market);
+  const candles = klineData?.data || [];
+  const closes = candles.map(c => parseFloat(c[4]));
+  const volumes = candles.map(c => parseFloat(c[5]));
+
+  const rsi = calcRSI(closes);
+  const macd = calcMACD(closes);
+  const bb = calcBollingerBands(closes);
+  const vwap = calcVWAP(candles);
+  const sr = calcSupportResistance(candles);
+  const volProfile = calcVolumeProfile(candles);
+  const pumpPatterns = calcPumpPatterns(candles);
+
+  // Order book analysis
+  let orderBook = null;
+  if (depthData?.data) {
+    const bids = depthData.data.bids || [];
+    const asks = depthData.data.asks || [];
+    const bidVol = bids.reduce((a, b) => a + parseFloat(b[1] || 0), 0);
+    const askVol = asks.reduce((a, b) => a + parseFloat(b[1] || 0), 0);
+    const total = bidVol + askVol;
+    orderBook = {
+      bidVol: parseFloat(bidVol.toFixed(4)),
+      askVol: parseFloat(askVol.toFixed(4)),
+      buyRatio: total > 0 ? Math.round((bidVol / total) * 100) : 50,
+      spread: asks[0] && bids[0]
+        ? parseFloat((parseFloat(asks[0][0]) - parseFloat(bids[0][0])).toFixed(8))
+        : null,
+      topBids: bids.slice(0, 5).map(b => ({ price: parseFloat(b[0]), vol: parseFloat(b[1]) })),
+      topAsks: asks.slice(0, 5).map(a => ({ price: parseFloat(a[0]), vol: parseFloat(a[1]) }))
+    };
+  }
+
+  // Volume analysis
+  const avgVol = volumes.length > 0 ? volumes.reduce((a, b) => a + b, 0) / volumes.length : 0;
+  const recentVol = volumes.slice(-6).reduce((a, b) => a + b, 0) / 6;
+  const volSurge = avgVol > 0 ? recentVol / avgVol : 1;
+
+  // Price performance
+  const firstClose = closes[0] || 0;
+  const lastClose = closes[closes.length - 1] || 0;
+  const periodChange = firstClose > 0 ? ((lastClose - firstClose) / firstClose * 100) : 0;
+
+  return {
+    market,
+    name: market.replace('USDT', ''),
+    ticker: ticker ? {
+      lastPrice: parseFloat(ticker.last) || 0,
+      high24h: parseFloat(ticker.high) || 0,
+      low24h: parseFloat(ticker.low) || 0,
+      volume24h: parseFloat(ticker.vol) || 0,
+      change24h: parseFloat(ticker.change_rate) * 100 || 0
+    } : null,
+    indicators: { rsi, macd, bollingerBands: bb, vwap },
+    supportResistance: sr,
+    volumeProfile: volProfile,
+    pumpPatterns,
+    orderBook,
+    volumeAnalysis: {
+      avgVolume: parseFloat(avgVol.toFixed(4)),
+      recentVolume: parseFloat(recentVol.toFixed(4)),
+      volSurge: parseFloat(volSurge.toFixed(2))
+    },
+    pricePerformance: {
+      periodChange: parseFloat(periodChange.toFixed(2)),
+      period,
+      candles: candles.slice(-50)
+    },
+    session: getCurrentSession(),
+    timestamp: new Date().toISOString()
+  };
+}
+
 // ─── NARRATIVE SCORE ───────────────────────────────────────────────────────
 const NARRATIVES = [
   'AI', 'GPT', 'AGENT', 'BOT',
@@ -151,35 +372,29 @@ function patternMatch(coin) {
 // ─── SCORING ENGINE ────────────────────────────────────────────────────────
 function scoreCoin(coin) {
   let score = 0;
-
-  // Price momentum 24h (0-20)
   const ch24 = coin.priceChange24h || 0;
   if (ch24 > 50) score += 20;
   else if (ch24 > 30) score += 15;
   else if (ch24 > 15) score += 10;
   else if (ch24 > 5) score += 5;
 
-  // Price momentum 1h (0-15)
   const ch1h = coin.priceChange1h || 0;
   if (ch1h > 20) score += 15;
   else if (ch1h > 10) score += 10;
   else if (ch1h > 5) score += 7;
   else if (ch1h > 2) score += 3;
 
-  // Volume surge (0-20)
   const volAccel = coin.volAccel || 0;
   if (volAccel > 4) score += 20;
   else if (volAccel > 3) score += 15;
   else if (volAccel > 2) score += 10;
   else if (volAccel > 1.5) score += 5;
 
-  // Order book imbalance (0-15)
   const br = coin.buyRatio || 50;
   if (br > 70) score += 15;
   else if (br > 60) score += 10;
   else if (br > 55) score += 5;
 
-  // Distance from 24h low (0-10)
   if (coin.low24h > 0 && coin.lastPrice > 0 && coin.high24h > coin.low24h) {
     const range = coin.high24h - coin.low24h;
     const distFromLow = (coin.lastPrice - coin.low24h) / range;
@@ -188,7 +403,6 @@ function scoreCoin(coin) {
     else if (distFromLow < 0.5) score += 3;
   }
 
-  // Distance from 24h high (0-10)
   if (coin.high24h > 0 && coin.lastPrice > 0 && coin.high24h > coin.low24h) {
     const range = coin.high24h - coin.low24h;
     const distFromHigh = (coin.high24h - coin.lastPrice) / range;
@@ -197,21 +411,15 @@ function scoreCoin(coin) {
     else if (distFromHigh < 0.2) score += 3;
   }
 
-  // Narrative (0-10)
   score += narrativeScore(coin.name);
-
-  // Pattern match (0-10)
   score += patternMatch(coin) * 0.1;
 
-  // Penalties
   if (coin.volAccel < 0.3) score -= 10;
   if (ch24 < -30) score -= 15;
   if (coin.isSuspicious) score -= 20;
   if (br < 30 && coin.volume24h > 0) score -= 10;
 
-  // Timing multiplier
   score = score * getTimingMultiplier();
-
   return Math.max(0, Math.min(100, Math.round(score)));
 }
 
@@ -232,8 +440,7 @@ function getSignalTags(coin) {
     if (distFromLow < 0.15) tags.push('NEAR LOW');
   }
 
-  const pm = patternMatch(coin);
-  if (pm > 60) tags.push('PATTERN MATCH');
+  if (patternMatch(coin) > 60) tags.push('PATTERN MATCH');
   if (coin.isNewListing) tags.push('NEW LISTING');
 
   const mult = getTimingMultiplier();
@@ -343,9 +550,7 @@ async function backgroundScan() {
 
         const mc = lastPrice * (volume24h / Math.max(lastPrice, 0.000001)) * 10;
 
-        const suspicious = isSuspicious({
-          priceChange24h, volume24h, buyRatio, lastPrice
-        });
+        const suspicious = isSuspicious({ priceChange24h, volume24h, buyRatio, lastPrice });
 
         const isNewListing = !state.seenMarkets.has(market);
         if (isNewListing) {
@@ -358,8 +563,7 @@ async function backgroundScan() {
           market, name, lastPrice, high24h, low24h,
           volume24h, volume1h, buyRatio,
           priceChange5m, priceChange1h, priceChange24h,
-          volAccel, mc, isSuspicious: suspicious, isNewListing,
-          session
+          volAccel, mc, isSuspicious: suspicious, isNewListing, session
         };
 
         coin.score = scoreCoin(coin);
@@ -368,9 +572,7 @@ async function backgroundScan() {
 
         if (coin.score >= 70) updateFingerprint(coin);
 
-      } catch (coinErr) {
-        // skip bad coin
-      }
+      } catch (coinErr) { /* skip */ }
     }
 
     processed.sort((a, b) => b.score - a.score);
@@ -431,7 +633,6 @@ async function backgroundScan() {
   }
 }
 
-// ─── START SCANNER ─────────────────────────────────────────────────────────
 backgroundScan();
 setInterval(backgroundScan, SCAN_INTERVAL_MS);
 
@@ -501,6 +702,152 @@ app.get('/api/coinex/depth', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+app.get('/api/coinex/debug', async (req, res) => {
+  try {
+    const data = await coinexGet('/spot/ticker');
+    const sample = data?.data?.slice(0, 3) || [];
+    res.json({ sample, keys: sample[0] ? Object.keys(sample[0]) : [] });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ─── RESEARCH ROUTES ───────────────────────────────────────────────────────
+app.get('/api/research/:market', async (req, res) => {
+  try {
+    const { market } = req.params;
+    const { period = '1hour', limit = 168 } = req.query;
+    const research = await getFullCoinResearch(market.toUpperCase(), period, parseInt(limit));
+    res.json(research);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/api/research/:market/indicators', async (req, res) => {
+  try {
+    const { market } = req.params;
+    const { period = '1hour', limit = 100 } = req.query;
+    const klineData = await coinexGet('/spot/kline', {
+      market: market.toUpperCase(),
+      price_type: 'last',
+      period,
+      limit
+    });
+    const candles = klineData?.data || [];
+    const closes = candles.map(c => parseFloat(c[4]));
+    res.json({
+      rsi: calcRSI(closes),
+      macd: calcMACD(closes),
+      bollingerBands: calcBollingerBands(closes),
+      vwap: calcVWAP(candles),
+      supportResistance: calcSupportResistance(candles),
+      volumeProfile: calcVolumeProfile(candles),
+      pumpPatterns: calcPumpPatterns(candles),
+      candles: candles.slice(-50)
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/api/research/:market/multiframe', async (req, res) => {
+  try {
+    const { market } = req.params;
+    const m = market.toUpperCase();
+    const [m1, m5, m15, h1, h4, d1] = await Promise.all([
+      coinexGet('/spot/kline', { market: m, price_type: 'last', period: '1min', limit: 60 }).catch(() => null),
+      coinexGet('/spot/kline', { market: m, price_type: 'last', period: '5min', limit: 60 }).catch(() => null),
+      coinexGet('/spot/kline', { market: m, price_type: 'last', period: '15min', limit: 60 }).catch(() => null),
+      coinexGet('/spot/kline', { market: m, price_type: 'last', period: '1hour', limit: 48 }).catch(() => null),
+      coinexGet('/spot/kline', { market: m, price_type: 'last', period: '4hour', limit: 30 }).catch(() => null),
+      coinexGet('/spot/kline', { market: m, price_type: 'last', period: '1day', limit: 30 }).catch(() => null)
+    ]);
+
+    const analyze = (kdata) => {
+      if (!kdata?.data || kdata.data.length === 0) return null;
+      const candles = kdata.data;
+      const closes = candles.map(c => parseFloat(c[4]));
+      return {
+        rsi: calcRSI(closes),
+        macd: calcMACD(closes),
+        bb: calcBollingerBands(closes),
+        candles: candles.slice(-20)
+      };
+    };
+
+    res.json({
+      market: m,
+      frames: {
+        '1min': analyze(m1),
+        '5min': analyze(m5),
+        '15min': analyze(m15),
+        '1hour': analyze(h1),
+        '4hour': analyze(h4),
+        '1day': analyze(d1)
+      }
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/research/compare', async (req, res) => {
+  try {
+    const { markets, period = '1hour', limit = 168 } = req.body;
+    if (!markets || markets.length < 2) {
+      return res.status(400).json({ error: 'At least 2 markets required' });
+    }
+
+    const results = await Promise.all(
+      markets.map(m => getFullCoinResearch(m.toUpperCase(), period, parseInt(limit))
+        .catch(e => ({ market: m, error: e.message }))
+      )
+    );
+
+    const valid = results.filter(r => !r.error && r.ticker);
+
+    if (valid.length < 2) {
+      return res.status(400).json({ error: 'Could not fetch data for enough markets' });
+    }
+
+    // Calculate similarities
+    const avgChange = valid.reduce((a, b) => a + (b.ticker?.change24h || 0), 0) / valid.length;
+    const avgVol = valid.reduce((a, b) => a + (b.ticker?.volume24h || 0), 0) / valid.length;
+    const avgRSI = valid.filter(c => c.indicators?.rsi).reduce((a, b) => a + b.indicators.rsi, 0) /
+      valid.filter(c => c.indicators?.rsi).length;
+    const avgVolSurge = valid.reduce((a, b) => a + (b.volumeAnalysis?.volSurge || 1), 0) / valid.length;
+
+    const changeSpread = Math.max(...valid.map(c => c.ticker?.change24h || 0)) -
+      Math.min(...valid.map(c => c.ticker?.change24h || 0));
+
+    const confidence = Math.max(0, Math.min(100,
+      100 - (changeSpread * 0.5) - (valid.length < 5 ? 20 : 0)
+    ));
+
+    // Common pump hours from volume profiles
+    const hourCounts = {};
+    valid.forEach(c => {
+      if (c.volumeProfile?.sorted) {
+        c.volumeProfile.sorted.forEach(h => {
+          hourCounts[h.hour] = (hourCounts[h.hour] || 0) + 1;
+        });
+      }
+    });
+    const bestHours = Object.entries(hourCounts)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 3)
+      .map(([h]) => parseInt(h));
+
+    res.json({
+      markets: valid.map(c => c.market),
+      confidence: Math.round(confidence),
+      similarities: {
+        avgChange24h: parseFloat(avgChange.toFixed(2)),
+        avgVolume: parseFloat(avgVol.toFixed(2)),
+        avgRSI: avgRSI ? parseFloat(avgRSI.toFixed(2)) : null,
+        avgVolSurge: parseFloat(avgVolSurge.toFixed(2)),
+        changeSpread: parseFloat(changeSpread.toFixed(2))
+      },
+      bestHours,
+      coins: valid,
+      session: getCurrentSession()
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 app.get('/api/scanner/results', (req, res) => {
   res.json({ winners: state.winners, session: getCurrentSession() });
 });
@@ -537,11 +884,9 @@ app.get('/api/history/summary', async (req, res) => {
       const gains = c.rows.map(r => r.price_change_24h || 0);
       const vols = c.rows.map(r => r.volume_24h || 0);
       return {
-        name: c.name,
-        market: c.market,
+        name: c.name, market: c.market,
         avgScore: scores.reduce((a, b) => a + b, 0) / scores.length,
-        maxGain: Math.max(...gains),
-        minGain: Math.min(...gains),
+        maxGain: Math.max(...gains), minGain: Math.min(...gains),
         maxVolume: Math.max(...vols),
         avgVolume: vols.reduce((a, b) => a + b, 0) / vols.length,
         scanCount: c.rows.length,
@@ -579,16 +924,10 @@ app.get('/api/history/summary', async (req, res) => {
     const highestVolume = [...summaries].sort((a, b) => b.maxVolume - a.maxVolume).slice(0, 10);
 
     res.json({
-      totalRecords: data.length,
-      uniqueCoins: summaries.length,
-      pumps: pumps.length,
-      suspicious: summaries.filter(s => s.suspicious).length,
-      topGainers,
-      topLosers,
-      highestVolume,
-      narratives: narrativeSummary,
-      sessionBreakdown,
-      pumpProfile
+      totalRecords: data.length, uniqueCoins: summaries.length,
+      pumps: pumps.length, suspicious: summaries.filter(s => s.suspicious).length,
+      topGainers, topLosers, highestVolume,
+      narratives: narrativeSummary, sessionBreakdown, pumpProfile
     });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -596,15 +935,10 @@ app.get('/api/history/summary', async (req, res) => {
 app.get('/api/history/heatmap', async (req, res) => {
   try {
     const { data, error } = await supabase
-      .from('coinex_scan_logs')
-      .select('timestamp, score')
-      .gte('score', 60);
+      .from('coinex_scan_logs').select('timestamp, score').gte('score', 60);
     if (error) throw new Error(error.message);
     const heatmap = Array(24).fill(0);
-    data.forEach(r => {
-      const h = new Date(r.timestamp).getUTCHours();
-      heatmap[h]++;
-    });
+    data.forEach(r => { heatmap[new Date(r.timestamp).getUTCHours()]++; });
     res.json({ heatmap });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -612,9 +946,7 @@ app.get('/api/history/heatmap', async (req, res) => {
 app.get('/api/history/bestwindow', async (req, res) => {
   try {
     const { data, error } = await supabase
-      .from('coinex_scan_logs')
-      .select('timestamp, score, price_change_24h')
-      .gte('score', 60);
+      .from('coinex_scan_logs').select('timestamp, score, price_change_24h').gte('score', 60);
     if (error) throw new Error(error.message);
     const hours = Array.from({ length: 24 }, (_, i) => ({ hour: i, pumps: 0, avgGain: 0, total: 0 }));
     data.forEach(r => {
@@ -633,11 +965,8 @@ app.get('/api/history/token', async (req, res) => {
     const { name } = req.query;
     if (!name) return res.status(400).json({ error: 'name required' });
     const { data, error } = await supabase
-      .from('coinex_scan_logs')
-      .select('*')
-      .ilike('name', name)
-      .order('timestamp', { ascending: true })
-      .limit(500);
+      .from('coinex_scan_logs').select('*').ilike('name', name)
+      .order('timestamp', { ascending: true }).limit(500);
     if (error) throw new Error(error.message);
     res.json({ data });
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -646,14 +975,10 @@ app.get('/api/history/token', async (req, res) => {
 app.get('/api/history/lowmc', async (req, res) => {
   try {
     const { data, error } = await supabase
-      .from('coinex_scan_logs')
-      .select('*')
-      .lt('mc', 5000000)
-      .gte('score', 55)
-      .order('timestamp', { ascending: false })
-      .limit(500);
+      .from('coinex_scan_logs').select('*')
+      .lt('mc', 5000000).gte('score', 55)
+      .order('timestamp', { ascending: false }).limit(500);
     if (error) throw new Error(error.message);
-
     const pumps = data.filter(r => r.price_change_24h > 20);
     const profile = pumps.length > 0 ? {
       count: pumps.length,
@@ -668,7 +993,6 @@ app.get('/api/history/lowmc', async (req, res) => {
       },
       topCoins: pumps.slice(0, 10).map(r => ({ name: r.name, gain: r.price_change_24h, session: r.session }))
     } : null;
-
     res.json({ profile, totalLowMC: data.length });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -676,9 +1000,7 @@ app.get('/api/history/lowmc', async (req, res) => {
 app.get('/api/history/sessions', async (req, res) => {
   try {
     const { data, error } = await supabase
-      .from('coinex_scan_logs')
-      .select('session, score, price_change_24h, name')
-      .gte('score', 50);
+      .from('coinex_scan_logs').select('session, score, price_change_24h, name').gte('score', 50);
     if (error) throw new Error(error.message);
     const sessions = { Asia: [], Europe: [], US: [] };
     data.forEach(r => { if (r.session && sessions[r.session]) sessions[r.session].push(r); });
@@ -711,7 +1033,7 @@ app.get('/api/history/storage', async (req, res) => {
 
 app.post('/api/ai', async (req, res) => {
   try {
-    const { mode, coin, windowData, messages, marketContext } = req.body;
+    const { mode, coin, windowData, messages, marketContext, researchData } = req.body;
 
     let systemPrompt = '';
     let userContent = '';
@@ -732,15 +1054,37 @@ Volume 24h: $${coin?.volume24h?.toLocaleString()}
 Volume surge: ${coin?.volAccel?.toFixed(2)}x
 Buy ratio: ${coin?.buyRatio}%
 Score: ${coin?.score}/100
-Near 24h high: ${coin?.nearHigh ? 'Yes' : 'No'}
-Near 24h low: ${coin?.nearLow ? 'Yes' : 'No'}
 Session: ${getCurrentSession()}
 Signal tags: ${(coin?.tags || []).join(', ')}`;
       temperature = 0.3;
       max_tokens = 150;
 
+    } else if (mode === 'research') {
+      systemPrompt = `You are an expert crypto analyst. Analyze the full technical research data for this coin and provide:
+1. Overall trend assessment (bullish/bearish/neutral)
+2. Key technical signals from RSI, MACD, Bollinger Bands
+3. Best entry zone based on support levels
+4. Main risk factors
+5. Verdict: STRONG BUY / BUY SMALL / WATCH / AVOID / TRAP
+Be specific and reference the actual data provided.`;
+      userContent = JSON.stringify(researchData || {});
+      temperature = 0.3;
+      max_tokens = 400;
+
+    } else if (mode === 'compare') {
+      systemPrompt = `You are a CoinEx pattern analyst. Compare these coins and provide:
+1. What they have in common (price action, volume, technicals)
+2. Key differences
+3. Which looks strongest right now and why
+4. Best entry conditions they share
+5. One specific actionable insight
+Be concise and data-driven.`;
+      userContent = JSON.stringify(researchData || {});
+      temperature = 0.3;
+      max_tokens = 400;
+
     } else if (mode === 'window') {
-      systemPrompt = `You are a CoinEx market analyst. Analyze the time window data and provide a plain English summary. Cover: what narratives dominated, what conditions preceded the best moves, what session was most active, one specific actionable recommendation for next time this window approaches.`;
+      systemPrompt = `You are a CoinEx market analyst. Analyze the time window data and provide a plain English summary covering: what narratives dominated, what conditions preceded the best moves, what session was most active, one specific actionable recommendation.`;
       userContent = JSON.stringify(windowData || {});
       temperature = 0.4;
       max_tokens = 300;
