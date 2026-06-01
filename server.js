@@ -157,16 +157,12 @@ function calcSupportResistance(candles) {
   const lows = candles.map(c => parseFloat(c[3]));
   const closes = candles.map(c => parseFloat(c[4]));
   const currentPrice = closes[closes.length - 1];
-
-  // Find key levels
   const sortedHighs = [...highs].sort((a, b) => b - a);
   const sortedLows = [...lows].sort((a, b) => a - b);
-
   const resistance1 = sortedHighs[0];
   const resistance2 = sortedHighs[Math.floor(sortedHighs.length * 0.1)];
   const support1 = sortedLows[0];
   const support2 = sortedLows[Math.floor(sortedLows.length * 0.1)];
-
   return {
     resistance1: parseFloat(resistance1.toFixed(8)),
     resistance2: parseFloat(resistance2.toFixed(8)),
@@ -201,7 +197,6 @@ function calcPumpPatterns(candles) {
   const closes = candles.map(c => parseFloat(c[4]));
   const vols = candles.map(c => parseFloat(c[5]));
   const avgVol = vols.reduce((a, b) => a + b, 0) / vols.length;
-
   const pumps = [];
   for (let i = 1; i < closes.length; i++) {
     const pct = (closes[i] - closes[i - 1]) / closes[i - 1] * 100;
@@ -215,7 +210,6 @@ function calcPumpPatterns(candles) {
       });
     }
   }
-
   return {
     count: pumps.length,
     avgMagnitude: pumps.length > 0
@@ -266,12 +260,19 @@ async function getFullCoinResearch(market, period = '1hour', limit = 168) {
     };
   }
 
-  // Volume analysis
+  // Volume analysis using correct field names
   const avgVol = volumes.length > 0 ? volumes.reduce((a, b) => a + b, 0) / volumes.length : 0;
   const recentVol = volumes.slice(-6).reduce((a, b) => a + b, 0) / 6;
   const volSurge = avgVol > 0 ? recentVol / avgVol : 1;
 
-  // Price performance
+  // Price performance using open field
+  const tickerLastPrice = ticker ? parseFloat(ticker.last) || 0 : 0;
+  const tickerOpen = ticker ? parseFloat(ticker.open) || tickerLastPrice : 0;
+  const tickerHigh = ticker ? parseFloat(ticker.high) || 0 : 0;
+  const tickerLow = ticker ? parseFloat(ticker.low) || 0 : 0;
+  const tickerVolume = ticker ? parseFloat(ticker.volume) || 0 : 0;
+  const tickerChange = tickerOpen > 0 ? ((tickerLastPrice - tickerOpen) / tickerOpen) * 100 : 0;
+
   const firstClose = closes[0] || 0;
   const lastClose = closes[closes.length - 1] || 0;
   const periodChange = firstClose > 0 ? ((lastClose - firstClose) / firstClose * 100) : 0;
@@ -280,11 +281,11 @@ async function getFullCoinResearch(market, period = '1hour', limit = 168) {
     market,
     name: market.replace('USDT', ''),
     ticker: ticker ? {
-      lastPrice: parseFloat(ticker.last) || 0,
-      high24h: parseFloat(ticker.high) || 0,
-      low24h: parseFloat(ticker.low) || 0,
-      volume24h: parseFloat(ticker.vol) || 0,
-      change24h: parseFloat(ticker.change_rate) * 100 || 0
+      lastPrice: tickerLastPrice,
+      high24h: tickerHigh,
+      low24h: tickerLow,
+      volume24h: tickerVolume,
+      change24h: parseFloat(tickerChange.toFixed(2))
     } : null,
     indicators: { rsi, macd, bollingerBands: bb, vwap },
     supportResistance: sr,
@@ -372,6 +373,7 @@ function patternMatch(coin) {
 // ─── SCORING ENGINE ────────────────────────────────────────────────────────
 function scoreCoin(coin) {
   let score = 0;
+
   const ch24 = coin.priceChange24h || 0;
   if (ch24 > 50) score += 20;
   else if (ch24 > 30) score += 15;
@@ -529,28 +531,54 @@ async function backgroundScan() {
       try {
         const market = t.market;
         const name = market.replace('USDT', '');
+
+        // ── FIXED FIELD NAMES ──────────────────────────────────────────────
         const lastPrice = parseFloat(t.last) || 0;
         const high24h = parseFloat(t.high) || 0;
         const low24h = parseFloat(t.low) || 0;
-        const volume24h = parseFloat(t.vol) || 0;
-        const priceChange24h = parseFloat(t.change_rate) * 100 || 0;
+        const volume24h = parseFloat(t.volume) || 0;
+        const open24h = parseFloat(t.open) || lastPrice;
+        const priceChange24h = open24h > 0
+          ? ((lastPrice - open24h) / open24h) * 100
+          : 0;
+        const volumeBuy = parseFloat(t.volume_buy) || 0;
+        const volumeSell = parseFloat(t.volume_sell) || 0;
+        const totalTradeVol = volumeBuy + volumeSell;
+        const buyRatioFromVolume = totalTradeVol > 0
+          ? Math.round((volumeBuy / totalTradeVol) * 100)
+          : 50;
+        // ──────────────────────────────────────────────────────────────────
 
+        // Volume acceleration
         const prevVol = state.lastVolumes[market] || volume24h;
         const volume1h = Math.max(0, volume24h - prevVol);
         state.lastVolumes[market] = volume24h;
-
         const avgHourlyVol = volume24h / 24;
         const volAccel = avgHourlyVol > 0 ? volume1h / avgHourlyVol : 0;
 
+        // Price change 5m from stored last price
         const prevPrice = state.lastPrices[market] || lastPrice;
-        const priceChange5m = prevPrice > 0 ? ((lastPrice - prevPrice) / prevPrice) * 100 : 0;
+        const priceChange5m = prevPrice > 0
+          ? ((lastPrice - prevPrice) / prevPrice) * 100
+          : 0;
         state.lastPrices[market] = lastPrice;
-        const buyRatio = Math.min(100, Math.max(0, 50 + priceChange5m * 3));
+
+        // Use volume_buy/volume_sell ratio as buy ratio when available
+        // fallback to price movement estimate
+        const buyRatio = totalTradeVol > 0
+          ? buyRatioFromVolume
+          : Math.min(100, Math.max(0, 50 + priceChange5m * 3));
+
         const priceChange1h = priceChange24h * 0.08;
 
-        const mc = lastPrice * (volume24h / Math.max(lastPrice, 0.000001)) * 10;
+        // Market cap estimate
+        const mc = volume24h > 0
+          ? lastPrice * (volume24h / Math.max(lastPrice, 0.000001)) * 10
+          : 0;
 
-        const suspicious = isSuspicious({ priceChange24h, volume24h, buyRatio, lastPrice });
+        const suspicious = isSuspicious({
+          priceChange24h, volume24h, buyRatio, lastPrice
+        });
 
         const isNewListing = !state.seenMarkets.has(market);
         if (isNewListing) {
@@ -572,7 +600,7 @@ async function backgroundScan() {
 
         if (coin.score >= 70) updateFingerprint(coin);
 
-      } catch (coinErr) { /* skip */ }
+      } catch (coinErr) { /* skip bad coin */ }
     }
 
     processed.sort((a, b) => b.score - a.score);
@@ -803,21 +831,19 @@ app.post('/api/research/compare', async (req, res) => {
       return res.status(400).json({ error: 'Could not fetch data for enough markets' });
     }
 
-    // Calculate similarities
     const avgChange = valid.reduce((a, b) => a + (b.ticker?.change24h || 0), 0) / valid.length;
     const avgVol = valid.reduce((a, b) => a + (b.ticker?.volume24h || 0), 0) / valid.length;
-    const avgRSI = valid.filter(c => c.indicators?.rsi).reduce((a, b) => a + b.indicators.rsi, 0) /
-      valid.filter(c => c.indicators?.rsi).length;
+    const rsiCoins = valid.filter(c => c.indicators?.rsi);
+    const avgRSI = rsiCoins.length > 0
+      ? rsiCoins.reduce((a, b) => a + b.indicators.rsi, 0) / rsiCoins.length
+      : null;
     const avgVolSurge = valid.reduce((a, b) => a + (b.volumeAnalysis?.volSurge || 1), 0) / valid.length;
-
     const changeSpread = Math.max(...valid.map(c => c.ticker?.change24h || 0)) -
       Math.min(...valid.map(c => c.ticker?.change24h || 0));
-
     const confidence = Math.max(0, Math.min(100,
       100 - (changeSpread * 0.5) - (valid.length < 5 ? 20 : 0)
     ));
 
-    // Common pump hours from volume profiles
     const hourCounts = {};
     valid.forEach(c => {
       if (c.volumeProfile?.sorted) {
@@ -855,7 +881,8 @@ app.get('/api/scanner/results', (req, res) => {
 app.get('/api/history/window', async (req, res) => {
   try {
     const { start, end } = req.query;
-    let q = supabase.from('coinex_scan_logs').select('*').order('timestamp', { ascending: false }).limit(1000);
+    let q = supabase.from('coinex_scan_logs').select('*')
+      .order('timestamp', { ascending: false }).limit(1000);
     if (start) q = q.gte('timestamp', start);
     if (end) q = q.lte('timestamp', end);
     const { data, error } = await q;
@@ -909,7 +936,9 @@ app.get('/api/history/summary', async (req, res) => {
     });
 
     const sessionBreakdown = { Asia: 0, Europe: 0, US: 0 };
-    data.forEach(r => { if (r.session) sessionBreakdown[r.session] = (sessionBreakdown[r.session] || 0) + 1; });
+    data.forEach(r => {
+      if (r.session) sessionBreakdown[r.session] = (sessionBreakdown[r.session] || 0) + 1;
+    });
 
     const pumps = summaries.filter(s => s.maxGain > 20);
     const pumpProfile = pumps.length > 0 ? {
@@ -991,7 +1020,9 @@ app.get('/api/history/lowmc', async (req, res) => {
         Europe: pumps.filter(r => r.session === 'Europe').length,
         US: pumps.filter(r => r.session === 'US').length
       },
-      topCoins: pumps.slice(0, 10).map(r => ({ name: r.name, gain: r.price_change_24h, session: r.session }))
+      topCoins: pumps.slice(0, 10).map(r => ({
+        name: r.name, gain: r.price_change_24h, session: r.session
+      }))
     } : null;
     res.json({ profile, totalLowMC: data.length });
   } catch (e) { res.status(500).json({ error: e.message }); }
