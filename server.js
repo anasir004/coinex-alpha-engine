@@ -12,18 +12,15 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
-// ─── ENV ───────────────────────────────────────────────────────────────────
 const GROQ_API_KEY = process.env.GROQ_API_KEY;
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_KEY = process.env.SUPABASE_KEY;
 const PORT = process.env.PORT || 3000;
 
-// ─── SUPABASE ──────────────────────────────────────────────────────────────
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
   realtime: { transport: ws }
 });
 
-// ─── CONSTANTS ─────────────────────────────────────────────────────────────
 const COINEX_BASE = 'https://api.coinex.com/v2';
 const SCAN_INTERVAL_MS = 30000;
 const FULL_SNAPSHOT_INTERVAL = 20;
@@ -32,7 +29,6 @@ const STORAGE_CLEANUP_PCT = 80;
 const SUPABASE_FREE_BYTES = 500 * 1024 * 1024;
 const BYTES_PER_ROW = 512;
 
-// ─── SESSION HELPER ────────────────────────────────────────────────────────
 function getCurrentSession() {
   const hour = new Date().getUTCHours();
   if (hour >= 0 && hour < 8) return 'Asia';
@@ -40,7 +36,6 @@ function getCurrentSession() {
   return 'US';
 }
 
-// ─── STATE ─────────────────────────────────────────────────────────────────
 const state = {
   scanCount: 0,
   lastScanTime: null,
@@ -60,7 +55,6 @@ const state = {
   cycleCount: 0
 };
 
-// ─── FETCH WITH ABORT ──────────────────────────────────────────────────────
 async function fetchWithTimeout(url, options = {}, timeoutMs = 10000) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -74,7 +68,6 @@ async function fetchWithTimeout(url, options = {}, timeoutMs = 10000) {
   }
 }
 
-// ─── COINEX FETCH HELPER ───────────────────────────────────────────────────
 async function coinexGet(endpoint, params = {}) {
   const url = new URL(COINEX_BASE + endpoint);
   Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
@@ -85,9 +78,33 @@ async function coinexGet(endpoint, params = {}) {
   return res.json();
 }
 
+// ─── CANDLE NORMALIZER ─────────────────────────────────────────────────────
+// CoinEx v2 kline returns objects with named fields OR arrays depending on endpoint
+// This normalizes both formats into [timestamp, open, high, low, close, volume]
+function normalizeCandle(c) {
+  if (Array.isArray(c)) {
+    // Already array format [ts, open, high, low, close, volume, ...]
+    return c;
+  }
+  // Object format from CoinEx v2
+  // Common field names: created_at/timestamp, open, high, low, close, volume/amount
+  const ts = c.created_at || c.timestamp || c.time || c.t || 0;
+  const open = c.open || c.o || 0;
+  const high = c.high || c.h || 0;
+  const low = c.low || c.l || 0;
+  const close = c.close || c.last || c.c || 0;
+  const volume = c.volume || c.amount || c.vol || c.v || 0;
+  return [ts, open, high, low, close, volume];
+}
+
+function normalizeCandles(raw) {
+  if (!raw || !Array.isArray(raw)) return [];
+  return raw.map(normalizeCandle);
+}
+
 // ─── TECHNICAL INDICATORS ──────────────────────────────────────────────────
 function calcRSI(closes, period = 14) {
-  if (closes.length < period + 1) return null;
+  if (!closes || closes.length < period + 1) return null;
   let gains = 0, losses = 0;
   for (let i = 1; i <= period; i++) {
     const diff = closes[i] - closes[i - 1];
@@ -107,7 +124,7 @@ function calcRSI(closes, period = 14) {
 }
 
 function calcEMA(closes, period) {
-  if (closes.length < period) return null;
+  if (!closes || closes.length < period) return null;
   const k = 2 / (period + 1);
   let ema = closes.slice(0, period).reduce((a, b) => a + b, 0) / period;
   for (let i = period; i < closes.length; i++) {
@@ -117,7 +134,7 @@ function calcEMA(closes, period) {
 }
 
 function calcMACD(closes) {
-  if (closes.length < 26) return null;
+  if (!closes || closes.length < 26) return null;
   const ema12 = calcEMA(closes, 12);
   const ema26 = calcEMA(closes, 26);
   if (!ema12 || !ema26) return null;
@@ -126,7 +143,7 @@ function calcMACD(closes) {
 }
 
 function calcBollingerBands(closes, period = 20) {
-  if (closes.length < period) return null;
+  if (!closes || closes.length < period) return null;
   const slice = closes.slice(-period);
   const avg = slice.reduce((a, b) => a + b, 0) / period;
   const variance = slice.reduce((a, b) => a + Math.pow(b - avg, 2), 0) / period;
@@ -145,24 +162,27 @@ function calcVWAP(candles) {
   candles.forEach(c => {
     const typical = (parseFloat(c[2]) + parseFloat(c[3]) + parseFloat(c[4])) / 3;
     const vol = parseFloat(c[5]);
-    totalTPV += typical * vol;
-    totalVol += vol;
+    if (!isNaN(typical) && !isNaN(vol)) {
+      totalTPV += typical * vol;
+      totalVol += vol;
+    }
   });
   return totalVol > 0 ? parseFloat((totalTPV / totalVol).toFixed(8)) : null;
 }
 
 function calcSupportResistance(candles) {
   if (!candles || candles.length < 10) return null;
-  const highs = candles.map(c => parseFloat(c[2]));
-  const lows = candles.map(c => parseFloat(c[3]));
-  const closes = candles.map(c => parseFloat(c[4]));
+  const highs = candles.map(c => parseFloat(c[2])).filter(n => !isNaN(n));
+  const lows = candles.map(c => parseFloat(c[3])).filter(n => !isNaN(n));
+  const closes = candles.map(c => parseFloat(c[4])).filter(n => !isNaN(n));
+  if (closes.length === 0) return null;
   const currentPrice = closes[closes.length - 1];
   const sortedHighs = [...highs].sort((a, b) => b - a);
   const sortedLows = [...lows].sort((a, b) => a - b);
   const resistance1 = sortedHighs[0];
-  const resistance2 = sortedHighs[Math.floor(sortedHighs.length * 0.1)];
+  const resistance2 = sortedHighs[Math.floor(sortedHighs.length * 0.1)] || resistance1;
   const support1 = sortedLows[0];
-  const support2 = sortedLows[Math.floor(sortedLows.length * 0.1)];
+  const support2 = sortedLows[Math.floor(sortedLows.length * 0.1)] || support1;
   return {
     resistance1: parseFloat(resistance1.toFixed(8)),
     resistance2: parseFloat(resistance2.toFixed(8)),
@@ -179,9 +199,10 @@ function calcVolumeProfile(candles) {
   const hourly = {};
   candles.forEach(c => {
     const ts = parseInt(c[0]);
+    if (isNaN(ts)) return;
     const hour = new Date(ts * 1000).getUTCHours();
     const vol = parseFloat(c[5]);
-    hourly[hour] = (hourly[hour] || 0) + vol;
+    if (!isNaN(vol)) hourly[hour] = (hourly[hour] || 0) + vol;
   });
   const sorted = Object.entries(hourly).sort((a, b) => b[1] - a[1]);
   return {
@@ -194,19 +215,21 @@ function calcVolumeProfile(candles) {
 
 function calcPumpPatterns(candles) {
   if (!candles || candles.length < 24) return null;
-  const closes = candles.map(c => parseFloat(c[4]));
-  const vols = candles.map(c => parseFloat(c[5]));
+  const closes = candles.map(c => parseFloat(c[4])).filter(n => !isNaN(n) && n > 0);
+  const vols = candles.map(c => parseFloat(c[5])).filter(n => !isNaN(n));
+  if (closes.length < 5) return { count: 0, avgMagnitude: 0, pumps: [] };
   const avgVol = vols.reduce((a, b) => a + b, 0) / vols.length;
   const pumps = [];
   for (let i = 1; i < closes.length; i++) {
     const pct = (closes[i] - closes[i - 1]) / closes[i - 1] * 100;
-    const volSurge = vols[i] / avgVol;
+    const volSurge = avgVol > 0 ? (vols[i] || 0) / avgVol : 0;
     if (pct > 5 && volSurge > 2) {
+      const ts = parseInt(candles[i]?.[0]);
       pumps.push({
         index: i,
         pct: parseFloat(pct.toFixed(2)),
         volSurge: parseFloat(volSurge.toFixed(2)),
-        hour: new Date(parseInt(candles[i][0]) * 1000).getUTCHours()
+        hour: !isNaN(ts) ? new Date(ts * 1000).getUTCHours() : 0
       });
     }
   }
@@ -228,9 +251,16 @@ async function getFullCoinResearch(market, period = '1hour', limit = 168) {
   ]);
 
   const ticker = tickerData?.data?.find(t => t.market === market);
-  const candles = klineData?.data || [];
-  const closes = candles.map(c => parseFloat(c[4]));
-  const volumes = candles.map(c => parseFloat(c[5]));
+
+  // Normalize candles regardless of format returned
+  const rawCandles = klineData?.data || [];
+  const candles = normalizeCandles(rawCandles);
+
+  console.log(`Research ${market}: ${candles.length} candles, raw sample:`,
+    rawCandles[0] ? JSON.stringify(rawCandles[0]).slice(0, 100) : 'none');
+
+  const closes = candles.map(c => parseFloat(c[4])).filter(n => !isNaN(n) && n > 0);
+  const volumes = candles.map(c => parseFloat(c[5])).filter(n => !isNaN(n));
 
   const rsi = calcRSI(closes);
   const macd = calcMACD(closes);
@@ -240,7 +270,6 @@ async function getFullCoinResearch(market, period = '1hour', limit = 168) {
   const volProfile = calcVolumeProfile(candles);
   const pumpPatterns = calcPumpPatterns(candles);
 
-  // Order book analysis
   let orderBook = null;
   if (depthData?.data) {
     const bids = depthData.data.bids || [];
@@ -260,12 +289,10 @@ async function getFullCoinResearch(market, period = '1hour', limit = 168) {
     };
   }
 
-  // Volume analysis using correct field names
   const avgVol = volumes.length > 0 ? volumes.reduce((a, b) => a + b, 0) / volumes.length : 0;
-  const recentVol = volumes.slice(-6).reduce((a, b) => a + b, 0) / 6;
+  const recentVol = volumes.slice(-6).reduce((a, b) => a + b, 0) / Math.min(6, volumes.length) || 0;
   const volSurge = avgVol > 0 ? recentVol / avgVol : 1;
 
-  // Price performance using open field
   const tickerLastPrice = ticker ? parseFloat(ticker.last) || 0 : 0;
   const tickerOpen = ticker ? parseFloat(ticker.open) || tickerLastPrice : 0;
   const tickerHigh = ticker ? parseFloat(ticker.high) || 0 : 0;
@@ -287,6 +314,7 @@ async function getFullCoinResearch(market, period = '1hour', limit = 168) {
       volume24h: tickerVolume,
       change24h: parseFloat(tickerChange.toFixed(2))
     } : null,
+    candleCount: candles.length,
     indicators: { rsi, macd, bollingerBands: bb, vwap },
     supportResistance: sr,
     volumeProfile: volProfile,
@@ -307,7 +335,6 @@ async function getFullCoinResearch(market, period = '1hour', limit = 168) {
   };
 }
 
-// ─── NARRATIVE SCORE ───────────────────────────────────────────────────────
 const NARRATIVES = [
   'AI', 'GPT', 'AGENT', 'BOT',
   'PEPE', 'DOGE', 'SHIB', 'FLOKI', 'BONK', 'WIF', 'MEME',
@@ -325,7 +352,6 @@ function narrativeScore(name) {
   return hit ? 10 : 0;
 }
 
-// ─── TIMING INTELLIGENCE ───────────────────────────────────────────────────
 function getTimingMultiplier() {
   if (state.pumpTimeLog.length < 5) return 1.0;
   const counts = {};
@@ -348,7 +374,6 @@ function getPeakQuietStatus() {
   return 'normal';
 }
 
-// ─── PATTERN MATCH ─────────────────────────────────────────────────────────
 function patternMatch(coin) {
   const fp = state.fingerprint;
   if (fp.count < 3) return 0;
@@ -370,10 +395,8 @@ function patternMatch(coin) {
   return Math.min(100, score);
 }
 
-// ─── SCORING ENGINE ────────────────────────────────────────────────────────
 function scoreCoin(coin) {
   let score = 0;
-
   const ch24 = coin.priceChange24h || 0;
   if (ch24 > 50) score += 20;
   else if (ch24 > 30) score += 15;
@@ -425,7 +448,6 @@ function scoreCoin(coin) {
   return Math.max(0, Math.min(100, Math.round(score)));
 }
 
-// ─── SIGNAL TAGS ───────────────────────────────────────────────────────────
 function getSignalTags(coin) {
   const tags = [];
   if (coin.volAccel > 3) tags.push('VOL SURGE');
@@ -452,7 +474,6 @@ function getSignalTags(coin) {
   return tags;
 }
 
-// ─── SUSPICIOUS DETECTION ──────────────────────────────────────────────────
 function isSuspicious(coin) {
   let s = 0;
   if (coin.priceChange24h < -60) s += 3;
@@ -462,7 +483,6 @@ function isSuspicious(coin) {
   return s >= 5;
 }
 
-// ─── FINGERPRINT UPDATE ────────────────────────────────────────────────────
 function updateFingerprint(coin) {
   const fp = state.fingerprint;
   const n = fp.count;
@@ -475,7 +495,6 @@ function updateFingerprint(coin) {
   if (state.pumpTimeLog.length > 500) state.pumpTimeLog.shift();
 }
 
-// ─── STORAGE CHECK ─────────────────────────────────────────────────────────
 async function checkStorage() {
   try {
     const { count } = await supabase
@@ -493,7 +512,6 @@ async function checkStorage() {
   }
 }
 
-// ─── AUTO CLEANUP ──────────────────────────────────────────────────────────
 async function runAutoCleanup() {
   console.log('Running auto cleanup...');
   try {
@@ -510,7 +528,6 @@ async function runAutoCleanup() {
   }
 }
 
-// ─── MAIN BACKGROUND SCANNER ───────────────────────────────────────────────
 async function backgroundScan() {
   try {
     state.cycleCount++;
@@ -532,7 +549,6 @@ async function backgroundScan() {
         const market = t.market;
         const name = market.replace('USDT', '');
 
-        // ── FIXED FIELD NAMES ──────────────────────────────────────────────
         const lastPrice = parseFloat(t.last) || 0;
         const high24h = parseFloat(t.high) || 0;
         const low24h = parseFloat(t.low) || 0;
@@ -547,31 +563,25 @@ async function backgroundScan() {
         const buyRatioFromVolume = totalTradeVol > 0
           ? Math.round((volumeBuy / totalTradeVol) * 100)
           : 50;
-        // ──────────────────────────────────────────────────────────────────
 
-        // Volume acceleration
         const prevVol = state.lastVolumes[market] || volume24h;
         const volume1h = Math.max(0, volume24h - prevVol);
         state.lastVolumes[market] = volume24h;
         const avgHourlyVol = volume24h / 24;
         const volAccel = avgHourlyVol > 0 ? volume1h / avgHourlyVol : 0;
 
-        // Price change 5m from stored last price
         const prevPrice = state.lastPrices[market] || lastPrice;
         const priceChange5m = prevPrice > 0
           ? ((lastPrice - prevPrice) / prevPrice) * 100
           : 0;
         state.lastPrices[market] = lastPrice;
 
-        // Use volume_buy/volume_sell ratio as buy ratio when available
-        // fallback to price movement estimate
         const buyRatio = totalTradeVol > 0
           ? buyRatioFromVolume
           : Math.min(100, Math.max(0, 50 + priceChange5m * 3));
 
         const priceChange1h = priceChange24h * 0.08;
 
-        // Market cap estimate
         const mc = volume24h > 0
           ? lastPrice * (volume24h / Math.max(lastPrice, 0.000001)) * 10
           : 0;
@@ -600,7 +610,7 @@ async function backgroundScan() {
 
         if (coin.score >= 70) updateFingerprint(coin);
 
-      } catch (coinErr) { /* skip bad coin */ }
+      } catch (coinErr) { /* skip */ }
     }
 
     processed.sort((a, b) => b.score - a.score);
@@ -738,6 +748,35 @@ app.get('/api/coinex/debug', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// ─── KLINE DEBUG ROUTE ─────────────────────────────────────────────────────
+app.get('/api/coinex/kline-debug', async (req, res) => {
+  try {
+    const market = req.query.market || 'BTCUSDT';
+    const results = {};
+    const periods = ['1min', '5min', '15min', '1hour', '4hour', '1day'];
+    for (const p of periods) {
+      try {
+        const data = await coinexGet('/spot/kline', {
+          market, price_type: 'last', period: p, limit: 3
+        });
+        const raw = data?.data || [];
+        const normalized = normalizeCandles(raw);
+        results[p] = {
+          code: data.code,
+          rawCount: raw.length,
+          rawSample: raw[0] || null,
+          rawType: raw[0] ? (Array.isArray(raw[0]) ? 'array' : 'object') : 'none',
+          rawKeys: raw[0] && !Array.isArray(raw[0]) ? Object.keys(raw[0]) : [],
+          normalizedSample: normalized[0] || null
+        };
+      } catch (e) {
+        results[p] = { error: e.message };
+      }
+    }
+    res.json({ market, results });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // ─── RESEARCH ROUTES ───────────────────────────────────────────────────────
 app.get('/api/research/:market', async (req, res) => {
   try {
@@ -758,8 +797,8 @@ app.get('/api/research/:market/indicators', async (req, res) => {
       period,
       limit
     });
-    const candles = klineData?.data || [];
-    const closes = candles.map(c => parseFloat(c[4]));
+    const candles = normalizeCandles(klineData?.data || []);
+    const closes = candles.map(c => parseFloat(c[4])).filter(n => !isNaN(n) && n > 0);
     res.json({
       rsi: calcRSI(closes),
       macd: calcMACD(closes),
@@ -787,9 +826,10 @@ app.get('/api/research/:market/multiframe', async (req, res) => {
     ]);
 
     const analyze = (kdata) => {
-      if (!kdata?.data || kdata.data.length === 0) return null;
-      const candles = kdata.data;
-      const closes = candles.map(c => parseFloat(c[4]));
+      if (!kdata?.data) return null;
+      const candles = normalizeCandles(kdata.data);
+      if (candles.length === 0) return null;
+      const closes = candles.map(c => parseFloat(c[4])).filter(n => !isNaN(n) && n > 0);
       return {
         rsi: calcRSI(closes),
         macd: calcMACD(closes),
@@ -825,10 +865,14 @@ app.post('/api/research/compare', async (req, res) => {
       )
     );
 
-    const valid = results.filter(r => !r.error && r.ticker);
+    // Accept coins even without ticker — use candleCount as quality indicator
+    const valid = results.filter(r => !r.error && (r.ticker || r.candleCount > 0));
 
     if (valid.length < 2) {
-      return res.status(400).json({ error: 'Could not fetch data for enough markets' });
+      return res.status(400).json({
+        error: 'Could not fetch data for enough markets',
+        details: results.map(r => ({ market: r.market, error: r.error, candleCount: r.candleCount }))
+      });
     }
 
     const avgChange = valid.reduce((a, b) => a + (b.ticker?.change24h || 0), 0) / valid.length;
