@@ -135,7 +135,7 @@ body{display:flex;flex-direction:column}
   background:linear-gradient(90deg,var(--accent),var(--bullish));
   -webkit-background-clip:text;-webkit-text-fill-color:transparent}
 .setup-sub{text-align:center;color:var(--text);font-size:11px;margin-bottom:24px}
-.profile-cards{display:flex;flex-direction:column;gap:10px;margin-bottom:24px}
+.profile-cards{display:flex;flex-direction:column;gap:10px;margin-bottom:16px}
 .profile-card{background:var(--surface);border:2px solid var(--border);border-radius:10px;
   padding:16px;cursor:pointer;transition:all .2s;}
 .profile-card:hover,.profile-card.selected{border-color:var(--accent)}
@@ -143,6 +143,15 @@ body{display:flex;flex-direction:column}
 .profile-name{font-family:'Orbitron',sans-serif;font-size:13px;font-weight:700;color:var(--white);margin-bottom:6px}
 .profile-desc{font-size:10px;color:var(--text);line-height:1.5}
 .profile-tags{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap}
+.custom-panel{background:var(--surface2);border:1px solid var(--border2);border-radius:10px;
+  padding:16px;margin-bottom:16px;}
+.custom-panel-title{font-family:'Orbitron',sans-serif;font-size:11px;color:var(--accent);
+  margin-bottom:14px;letter-spacing:1px}
+.slider-row{margin-bottom:14px}
+.slider-label{display:flex;justify-content:space-between;font-size:10px;
+  color:var(--text);margin-bottom:6px}
+.slider-val{color:var(--bullish);font-weight:500}
+input[type=range]{width:100%;accent-color:var(--accent);height:4px;border-radius:2px}
 .monitor-input-wrap{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:14px;margin-bottom:14px;}
 .monitor-input-row{display:flex;gap:8px;margin-bottom:10px}
 .monitor-input{flex:1;background:var(--surface2);border:1px solid var(--border2);
@@ -317,9 +326,54 @@ body{display:flex;flex-direction:column}
         <div class="profile-desc">All ranges · No volume floor · Threshold 20</div>
         <div class="profile-tags"><span class="tag bearish-tag">HIGH RISK</span><span class="tag bearish-tag">DEGEN MODE</span></div>
       </div>
+      <div class="profile-card" onclick="selectProfile('custom')">
+        <div class="profile-name">⚙ CUSTOM</div>
+        <div class="profile-desc">Configure your own filters and thresholds</div>
+        <div class="profile-tags"><span class="tag">ADVANCED</span></div>
+      </div>
     </div>
-    <button class="btn btn-primary" style="width:100%;padding:14px;font-size:13px" onclick="launchScanner()">LAUNCH SCANNER</button>
+
+    <!-- Custom settings panel -->
+    <div id="custom-settings-panel" style="display:none" class="custom-panel">
+      <div class="custom-panel-title">⚙ CUSTOM SETTINGS</div>
+      <div class="slider-row">
+        <div class="slider-label"><span>MIN VOLUME 24H</span><span class="slider-val" id="custom-vol-val">$50,000</span></div>
+        <input type="range" id="custom-vol-slider" min="0" max="1000000" step="5000" value="50000"
+          oninput="document.getElementById('custom-vol-val').textContent='$'+parseInt(this.value).toLocaleString()">
+      </div>
+      <div class="slider-row">
+        <div class="slider-label"><span>MIN 24H CHANGE</span><span class="slider-val" id="custom-change-val">0%</span></div>
+        <input type="range" id="custom-change-slider" min="-50" max="100" step="1" value="0"
+          oninput="document.getElementById('custom-change-val').textContent=this.value+'%'">
+      </div>
+      <div class="slider-row">
+        <div class="slider-label"><span>SCORE THRESHOLD</span><span class="slider-val" id="custom-score-val">40</span></div>
+        <input type="range" id="custom-score-slider" min="0" max="100" step="5" value="40"
+          oninput="document.getElementById('custom-score-val').textContent=this.value">
+      </div>
+      <div class="slider-row">
+        <div class="slider-label"><span>MIN MARKET CAP</span><span class="slider-val" id="custom-mc-val">$0</span></div>
+        <input type="range" id="custom-mc-slider" min="0" max="10000000" step="10000" value="0"
+          oninput="document.getElementById('custom-mc-val').textContent='$'+parseInt(this.value).toLocaleString()">
+      </div>
+      <div class="form-group" style="margin-top:10px">
+        <label class="form-label">SESSION FILTER</label>
+        <select class="form-input" id="custom-session-select">
+          <option value="all">All Sessions</option>
+          <option value="Asia">Asia Only (00:00-08:00 UTC)</option>
+          <option value="Europe">Europe Only (08:00-16:00 UTC)</option>
+          <option value="US">US Only (16:00-00:00 UTC)</option>
+        </select>
+      </div>
+      <div class="toggle-row">
+        <span style="font-size:11px;color:var(--text)">Filter Suspicious Coins</span>
+        <div class="toggle on" id="custom-suspicious-toggle" onclick="this.classList.toggle('on')"></div>
+      </div>
+    </div>
+
+    <button class="btn btn-primary" style="width:100%;padding:14px;font-size:13px;margin-top:8px" onclick="launchScanner()">LAUNCH SCANNER</button>
   </div>
+
   <div id="scanner-dashboard" style="display:none">
     <div id="peak-banner" class="banner banner-peak" style="display:none">⚡ PEAK HOUR — Timing multiplier 1.12x active</div>
     <div id="quiet-banner" class="banner banner-quiet" style="display:none">🌙 QUIET HOUR — Low activity 0.88x</div>
@@ -800,7 +854,8 @@ const APP={
 const PROFILES={
   conservative:{minVol:500000,minChange:10,threshold:65,minMC:0},
   balanced:{minVol:50000,minChange:0,threshold:40,minMC:0},
-  degen:{minVol:0,minChange:-999,threshold:20,minMC:0}
+  degen:{minVol:0,minChange:-999,threshold:20,minMC:0},
+  custom:{minVol:50000,minChange:0,threshold:40,minMC:0}
 };
 function fmt(n,d=2){if(n===null||n===undefined||isNaN(n))return'--';return parseFloat(n).toFixed(d)}
 function fmtLarge(n){if(!n||isNaN(n))return'--';if(n>=1e9)return'$'+(n/1e9).toFixed(2)+'B';if(n>=1e6)return'$'+(n/1e6).toFixed(2)+'M';if(n>=1e3)return'$'+(n/1e3).toFixed(1)+'K';return'$'+n.toFixed(2)}
@@ -815,8 +870,34 @@ async function apiPost(url,body){try{const r=await fetch(url,{method:'POST',head
 function updateHeaderClock(){const now=new Date();const h=now.getUTCHours();const m=String(now.getUTCMinutes()).padStart(2,'0');const s=String(now.getUTCSeconds()).padStart(2,'0');document.getElementById('utc-time').textContent=`UTC ${h}:${m}:${s}`;const badge=document.getElementById('session-badge');if(h>=0&&h<8){badge.textContent='ASIA';badge.className='session-badge session-asia'}else if(h>=8&&h<16){badge.textContent='EUROPE';badge.className='session-badge session-europe'}else{badge.textContent='US';badge.className='session-badge session-us'}}
 setInterval(updateHeaderClock,1000);updateHeaderClock();
 function switchTab(name,btn){document.querySelectorAll('.tab-content').forEach(t=>t.classList.remove('active'));document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));document.getElementById('tab-'+name).classList.add('active');btn.classList.add('active');if(name==='market')refreshMarket();if(name==='perf')loadPerformance();if(name==='history')checkLocalDB()}
-function selectProfile(p){APP.profile=p;document.querySelectorAll('.profile-card').forEach(c=>c.classList.remove('selected'));event.currentTarget.classList.add('selected')}
-function launchScanner(){const p=PROFILES[APP.profile];APP.settings.minVol=p.minVol;APP.settings.minChange=p.minChange;APP.settings.threshold=p.threshold;APP.launched=true;document.getElementById('setup-screen').style.display='none';document.getElementById('scanner-dashboard').style.display='block';startScanLoop();startBGSync();toast('Scanner launched — '+APP.profile.toUpperCase(),'success')}
+function selectProfile(p){
+  APP.profile=p;
+  document.querySelectorAll('.profile-card').forEach(c=>c.classList.remove('selected'));
+  event.currentTarget.classList.add('selected');
+  const panel=document.getElementById('custom-settings-panel');
+  if(panel)panel.style.display=p==='custom'?'block':'none';
+}
+function launchScanner(){
+  if(APP.profile==='custom'){
+    APP.settings.minVol=parseInt(document.getElementById('custom-vol-slider').value)||0;
+    APP.settings.minChange=parseInt(document.getElementById('custom-change-slider').value)||0;
+    APP.settings.threshold=parseInt(document.getElementById('custom-score-slider').value)||0;
+    APP.settings.minMC=parseInt(document.getElementById('custom-mc-slider').value)||0;
+    APP.settings.session=document.getElementById('custom-session-select').value;
+    APP.settings.suspicious=document.getElementById('custom-suspicious-toggle').classList.contains('on');
+  }else{
+    const p=PROFILES[APP.profile];
+    APP.settings.minVol=p.minVol;
+    APP.settings.minChange=p.minChange;
+    APP.settings.threshold=p.threshold;
+    APP.settings.minMC=p.minMC||0;
+  }
+  APP.launched=true;
+  document.getElementById('setup-screen').style.display='none';
+  document.getElementById('scanner-dashboard').style.display='block';
+  startScanLoop();startBGSync();
+  toast('Scanner launched — '+APP.profile.toUpperCase(),'success');
+}
 async function startScanLoop(){await runScan();APP.scanInterval=setInterval(runScan,30000)}
 async function runScan(){if(APP.paused)return;try{const data=await apiFetch('/api/scanner/results');if(!data||!data.winners)return;let results=data.winners.filter(c=>{if(c.volume24h<APP.settings.minVol)return false;if(c.priceChange24h<APP.settings.minChange)return false;if(c.score<APP.settings.threshold)return false;if(c.mc<APP.settings.minMC)return false;if(APP.settings.suspicious&&c.isSuspicious)return false;if(APP.settings.session!=='all'&&c.session!==APP.settings.session)return false;return true});APP.scanResults=results;renderCoins(results);updateStats(results)}catch(e){console.error('Scan error:',e)}}
 async function scanNow(){toast('Fetching latest data...','info');await runScan()}
@@ -838,18 +919,47 @@ async function runMultiframe(){const input=document.getElementById('research-inp
 function drawResearchChart(candles){if(!candles||candles.length===0)return;const canvas=document.getElementById('research-price-chart');canvas.width=canvas.offsetWidth||300;canvas.height=150;const ctx=canvas.getContext('2d');ctx.clearRect(0,0,canvas.width,canvas.height);const closes=candles.map(c=>parseFloat(c[4]));const min=Math.min(...closes);const max=Math.max(...closes);const range=(max-min)||1;const W=canvas.width;const H=canvas.height;ctx.strokeStyle='rgba(21,31,53,0.8)';ctx.lineWidth=1;for(let i=0;i<4;i++){const y=H*(i/3);ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(W,y);ctx.stroke()}const grad=ctx.createLinearGradient(0,0,W,0);grad.addColorStop(0,'#9945ff');grad.addColorStop(1,'#14f195');ctx.strokeStyle=grad;ctx.lineWidth=2;ctx.beginPath();closes.forEach((c,i)=>{const x=(i/(closes.length-1))*W;const y=H-((c-min)/range)*(H-10)-5;i===0?ctx.moveTo(x,y):ctx.lineTo(x,y)});ctx.stroke();ctx.fillStyle='rgba(153,69,255,0.06)';ctx.lineTo(W,H);ctx.lineTo(0,H);ctx.closePath();ctx.fill()}
 async function runResearchAI(){if(!APP.researchData)return toast('Run research first','warn');const box=document.getElementById('research-ai-result');const txt=document.getElementById('research-ai-text');box.style.display='block';txt.textContent='Generating deep analysis...';const res=await apiPost('/api/ai',{mode:'research',researchData:APP.researchData});txt.textContent=res?.text||'Analysis failed'}
 function researchFromMonitor(){if(!APP.previewData)return;document.getElementById('research-input').value=APP.previewData.market;switchTab('research',document.querySelectorAll('.tab-btn')[3]);runResearch()}
-async function previewCoin(){const input=document.getElementById('monitor-input').value.trim().toUpperCase();if(!input)return toast('Enter a market symbol','error');const market=input.includes('USDT')?input:input+'USDT';toast('Fetching '+market+'...','info');const[tickerData,depthData]=await Promise.all([apiFetch('/api/coinex/ticker'),apiFetch('/api/coinex/depth?market='+market)]);if(!tickerData?.data)return toast('Could not fetch ticker data','error');const ticker=tickerData.data.find(t=>t.market===market);if(!ticker)return toast('Market not found: '+market,'error');const lastPrice=parseFloat(ticker.last)||0;const high24h=parseFloat(ticker.high)||0;const low24h=parseFloat(ticker.low)||0;const volume24h=parseFloat(ticker.vol)||0;const change24h=parseFloat(ticker.change_rate)*100||0;APP.previewData={market,name:market.replace('USDT',''),lastPrice,high24h,low24h,volume24h,priceChange24h:change24h};document.getElementById('preview-name').textContent=market.replace('USDT','');document.getElementById('preview-market').textContent=market;document.getElementById('preview-ch24').textContent=fmtPct(change24h);document.getElementById('preview-ch24').className='metric-val '+pctClass(change24h);document.getElementById('preview-vol').textContent=fmtLarge(volume24h);document.getElementById('preview-price').textContent='$'+fmt(lastPrice,6);document.getElementById('preview-high').textContent='$'+fmt(high24h,6);document.getElementById('preview-low').textContent='$'+fmt(low24h,6);if(depthData?.data){const bids=depthData.data.bids||[];const asks=depthData.data.asks||[];const bidVol=bids.reduce((a,b)=>a+parseFloat(b[1]||0),0);const askVol=asks.reduce((a,b)=>a+parseFloat(b[1]||0),0);const total=bidVol+askVol;const bidPct=total>0?Math.round((bidVol/total)*100):50;APP.previewData.buyRatio=bidPct;document.getElementById('preview-br').textContent=bidPct+'%';document.getElementById('preview-ob').style.display='block';document.getElementById('preview-ob-pct').textContent=bidPct+'%';document.getElementById('preview-ob-fill').style.width=bidPct+'%'}else{document.getElementById('preview-br').textContent='--'}document.getElementById('preview-dex-btn').onclick=()=>window.open('https://www.coinex.com/trading/'+market,'_blank');document.getElementById('monitor-preview').style.display='block'}
+async function previewCoin(){const input=document.getElementById('monitor-input').value.trim().toUpperCase();if(!input)return toast('Enter a market symbol','error');const market=input.includes('USDT')?input:input+'USDT';toast('Fetching '+market+'...','info');const[tickerData,depthData]=await Promise.all([apiFetch('/api/coinex/ticker'),apiFetch('/api/coinex/depth?market='+market)]);if(!tickerData?.data)return toast('Could not fetch ticker data','error');const ticker=tickerData.data.find(t=>t.market===market);if(!ticker)return toast('Market not found: '+market,'error');const lastPrice=parseFloat(ticker.last)||0;const high24h=parseFloat(ticker.high)||0;const low24h=parseFloat(ticker.low)||0;const volume24h=parseFloat(ticker.volume)||0;const open24h=parseFloat(ticker.open)||lastPrice;const change24h=open24h>0?((lastPrice-open24h)/open24h)*100:0;APP.previewData={market,name:market.replace('USDT',''),lastPrice,high24h,low24h,volume24h,priceChange24h:change24h};document.getElementById('preview-name').textContent=market.replace('USDT','');document.getElementById('preview-market').textContent=market;document.getElementById('preview-ch24').textContent=fmtPct(change24h);document.getElementById('preview-ch24').className='metric-val '+pctClass(change24h);document.getElementById('preview-vol').textContent=fmtLarge(volume24h);document.getElementById('preview-price').textContent='$'+fmt(lastPrice,6);document.getElementById('preview-high').textContent='$'+fmt(high24h,6);document.getElementById('preview-low').textContent='$'+fmt(low24h,6);if(depthData?.data){const bids=depthData.data.bids||[];const asks=depthData.data.asks||[];const bidVol=bids.reduce((a,b)=>a+parseFloat(b[1]||0),0);const askVol=asks.reduce((a,b)=>a+parseFloat(b[1]||0),0);const total=bidVol+askVol;const bidPct=total>0?Math.round((bidVol/total)*100):50;APP.previewData.buyRatio=bidPct;document.getElementById('preview-br').textContent=bidPct+'%';document.getElementById('preview-ob').style.display='block';document.getElementById('preview-ob-pct').textContent=bidPct+'%';document.getElementById('preview-ob-fill').style.width=bidPct+'%'}else{document.getElementById('preview-br').textContent='--'}document.getElementById('preview-dex-btn').onclick=()=>window.open('https://www.coinex.com/trading/'+market,'_blank');document.getElementById('monitor-preview').style.display='block'}
 async function analyzePreviewCoin(){if(!APP.previewData)return;const txt=document.getElementById('preview-ai-text');const box=document.getElementById('preview-ai-result');box.style.display='block';txt.textContent='Analyzing...';const res=await apiPost('/api/ai',{mode:'coin',coin:APP.previewData});txt.textContent=res?.text||'Analysis failed'}
 function clearPreview(){APP.previewData=null;document.getElementById('monitor-preview').style.display='none';document.getElementById('monitor-input').value='';document.getElementById('preview-ai-result').style.display='none';document.getElementById('preview-ob').style.display='none'}
 function addToMonitor(){if(!APP.previewData)return;const market=APP.previewData.market;if(APP.monitors[market])return toast(market+' already monitored','warn');const interval=parseInt(document.getElementById('monitor-interval').value);APP.monitors[market]={...APP.previewData,interval,lastAI:null};renderMonitorCard(market);APP.monitorIntervals[market]=setInterval(()=>refreshMonitor(market),interval);toast(market+' added to monitor','success');clearPreview()}
 function renderMonitorCard(market){const list=document.getElementById('monitor-list');if(list.innerHTML.includes('No coins'))list.innerHTML='';const div=document.createElement('div');div.className='monitor-card';div.id='monitor-'+market;div.innerHTML=`<div class="monitor-card-header"><div><div class="coin-name">${market.replace('USDT','')} <span class="new-badge">${market}</span></div><div style="font-size:9px;color:var(--dim)" id="mtime-${market}">--</div></div><div style="display:flex;gap:6px;align-items:center"><select class="interval-select" onchange="changeMonitorInterval('${market}',this.value)"><option value="5000">5s</option><option value="10000">10s</option><option value="30000" selected>30s</option><option value="60000">1m</option><option value="120000">2m</option></select><button class="btn btn-danger btn-sm" onclick="removeMonitor('${market}')">✕</button></div></div><div class="metrics-grid"><div class="metric-box"><div class="metric-val" id="mprice-${market}">--</div><div class="metric-lbl">PRICE</div></div><div class="metric-box"><div class="metric-val" id="mch24-${market}">--</div><div class="metric-lbl">Δ 24H</div></div><div class="metric-box"><div class="metric-val" id="mvol-${market}">--</div><div class="metric-lbl">VOL 24H</div></div><div class="metric-box"><div class="metric-val" id="mhigh-${market}">--</div><div class="metric-lbl">HIGH</div></div><div class="metric-box"><div class="metric-val" id="mlow-${market}">--</div><div class="metric-lbl">LOW</div></div><div class="metric-box"><div class="metric-val" id="mbr-${market}">--</div><div class="metric-lbl">BUY RATIO</div></div></div><div class="pressure-bar-wrap"><div class="pressure-label"><span>BUY</span><span id="mbr-pct-${market}">50%</span><span>SELL</span></div><div class="pressure-track"><div class="pressure-fill" id="mbr-fill-${market}" style="width:50%"></div></div></div><div id="malert-${market}" class="banner banner-warn" style="display:none"></div><div class="ai-insight" id="mai-${market}" style="display:none"><div class="ai-label">⬡ GROQ ANALYSIS</div><div id="mai-text-${market}">Loading...</div></div><div class="card-actions"><button class="btn btn-primary btn-sm" onclick="manualMonitorAI('${market}')">⬡ AI NOW</button><button class="btn btn-secondary btn-sm" onclick="researchCoin('${market}')">🔬 RESEARCH</button><button class="btn btn-secondary btn-sm" onclick="window.open('https://www.coinex.com/trading/${market}','_blank')">↗ COINEX</button></div>`;list.appendChild(div);refreshMonitor(market)}
-async function refreshMonitor(market){const mon=APP.monitors[market];if(!mon)return;const[tickerData,depthData]=await Promise.all([apiFetch('/api/coinex/ticker'),apiFetch('/api/coinex/depth?market='+market)]);if(!tickerData?.data)return;const ticker=tickerData.data.find(t=>t.market===market);if(!ticker)return;const lastPrice=parseFloat(ticker.last)||0;const high24h=parseFloat(ticker.high)||0;const low24h=parseFloat(ticker.low)||0;const volume24h=parseFloat(ticker.vol)||0;const change24h=parseFloat(ticker.change_rate)*100||0;let buyRatio=50;if(depthData?.data){const bids=depthData.data.bids||[];const asks=depthData.data.asks||[];const bidVol=bids.reduce((a,b)=>a+parseFloat(b[1]||0),0);const askVol=asks.reduce((a,b)=>a+parseFloat(b[1]||0),0);const total=bidVol+askVol;buyRatio=total>0?Math.round((bidVol/total)*100):50}const safe=(id,val)=>{const el=document.getElementById(id);if(el)el.textContent=val};const safeClass=(id,cls)=>{const el=document.getElementById(id);if(el)el.className='metric-val '+cls};safe('mprice-'+market,'$'+fmt(lastPrice,6));safe('mch24-'+market,fmtPct(change24h));safeClass('mch24-'+market,pctClass(change24h));safe('mvol-'+market,fmtLarge(volume24h));safe('mhigh-'+market,'$'+fmt(high24h,6));safe('mlow-'+market,'$'+fmt(low24h,6));safe('mbr-'+market,buyRatio+'%');safe('mbr-pct-'+market,buyRatio+'%');safe('mtime-'+market,'Updated: '+new Date().toLocaleTimeString());const fill=document.getElementById('mbr-fill-'+market);if(fill)fill.style.width=buyRatio+'%';const card=document.getElementById('monitor-'+market);if(card)card.classList.toggle('bullish-border',buyRatio>60&&change24h>0);const prev=mon.lastPrice;const prevBR=mon.lastBuyRatio||50;const prevVol=mon.lastVol||volume24h;const priceMovePct=prev?Math.abs((lastPrice-prev)/prev*100):0;const volSurge=prevVol>0?volume24h/prevVol:1;let alertMsg='';if(buyRatio<40&&prevBR>=40)alertMsg='⚠ Buy ratio dropped below 40%';else if(volSurge>2)alertMsg='⚡ Volume spiked 2x';else if(priceMovePct>10)alertMsg=`📈 Price moved ${fmtPct(priceMovePct)}`;if(alertMsg&&!mon.alertShown){const alertEl=document.getElementById('malert-'+market);if(alertEl){alertEl.style.display='flex';alertEl.textContent=alertMsg}mon.alertShown=true;manualMonitorAI(market);if(APP.settings.sound)playAlert()}mon.lastPrice=lastPrice;mon.lastBuyRatio=buyRatio;mon.lastVol=volume24h;mon.priceChange24h=change24h}
+async function refreshMonitor(market){const mon=APP.monitors[market];if(!mon)return;const[tickerData,depthData]=await Promise.all([apiFetch('/api/coinex/ticker'),apiFetch('/api/coinex/depth?market='+market)]);if(!tickerData?.data)return;const ticker=tickerData.data.find(t=>t.market===market);if(!ticker)return;const lastPrice=parseFloat(ticker.last)||0;const high24h=parseFloat(ticker.high)||0;const low24h=parseFloat(ticker.low)||0;const volume24h=parseFloat(ticker.volume)||0;const open24h=parseFloat(ticker.open)||lastPrice;const change24h=open24h>0?((lastPrice-open24h)/open24h)*100:0;let buyRatio=50;if(depthData?.data){const bids=depthData.data.bids||[];const asks=depthData.data.asks||[];const bidVol=bids.reduce((a,b)=>a+parseFloat(b[1]||0),0);const askVol=asks.reduce((a,b)=>a+parseFloat(b[1]||0),0);const total=bidVol+askVol;buyRatio=total>0?Math.round((bidVol/total)*100):50}const safe=(id,val)=>{const el=document.getElementById(id);if(el)el.textContent=val};const safeClass=(id,cls)=>{const el=document.getElementById(id);if(el)el.className='metric-val '+cls};safe('mprice-'+market,'$'+fmt(lastPrice,6));safe('mch24-'+market,fmtPct(change24h));safeClass('mch24-'+market,pctClass(change24h));safe('mvol-'+market,fmtLarge(volume24h));safe('mhigh-'+market,'$'+fmt(high24h,6));safe('mlow-'+market,'$'+fmt(low24h,6));safe('mbr-'+market,buyRatio+'%');safe('mbr-pct-'+market,buyRatio+'%');safe('mtime-'+market,'Updated: '+new Date().toLocaleTimeString());const fill=document.getElementById('mbr-fill-'+market);if(fill)fill.style.width=buyRatio+'%';const card=document.getElementById('monitor-'+market);if(card)card.classList.toggle('bullish-border',buyRatio>60&&change24h>0);const prev=mon.lastPrice;const prevBR=mon.lastBuyRatio||50;const prevVol=mon.lastVol||volume24h;const priceMovePct=prev?Math.abs((lastPrice-prev)/prev*100):0;const volSurge=prevVol>0?volume24h/prevVol:1;let alertMsg='';if(buyRatio<40&&prevBR>=40)alertMsg='⚠ Buy ratio dropped below 40%';else if(volSurge>2)alertMsg='⚡ Volume spiked 2x';else if(priceMovePct>10)alertMsg=`📈 Price moved ${fmtPct(priceMovePct)}`;if(alertMsg&&!mon.alertShown){const alertEl=document.getElementById('malert-'+market);if(alertEl){alertEl.style.display='flex';alertEl.textContent=alertMsg}mon.alertShown=true;manualMonitorAI(market);if(APP.settings.sound)playAlert()}mon.lastPrice=lastPrice;mon.lastBuyRatio=buyRatio;mon.lastVol=volume24h;mon.priceChange24h=change24h}
 async function manualMonitorAI(market){const mon=APP.monitors[market];if(!mon)return;const box=document.getElementById('mai-'+market);const txt=document.getElementById('mai-text-'+market);if(!box||!txt)return;box.style.display='block';txt.textContent='Analyzing...';const res=await apiPost('/api/ai',{mode:'coin',coin:mon});txt.textContent=res?.text||'Analysis failed';mon.lastAI=res?.text}
 function changeMonitorInterval(market,val){if(APP.monitorIntervals[market])clearInterval(APP.monitorIntervals[market]);APP.monitorIntervals[market]=setInterval(()=>refreshMonitor(market),parseInt(val))}
 function removeMonitor(market){if(APP.monitorIntervals[market])clearInterval(APP.monitorIntervals[market]);delete APP.monitors[market];delete APP.monitorIntervals[market];const el=document.getElementById('monitor-'+market);if(el)el.remove();if(Object.keys(APP.monitors).length===0)document.getElementById('monitor-list').innerHTML='<div style="color:var(--dim);font-size:11px;text-align:center;padding:20px">No coins being monitored.</div>'}
 function playAlert(){try{const ctx=new AudioContext();const osc=ctx.createOscillator();osc.connect(ctx.destination);osc.frequency.value=880;osc.start();osc.stop(ctx.currentTime+0.15)}catch(e){}}
 function setMarketTimeframe(tf,el){APP.marketTimeframe=tf;document.querySelectorAll('#tab-market .timeframe-pills .pill').forEach(p=>p.classList.remove('active'));el.classList.add('active');refreshMarket()}
-async function refreshMarket(){try{const tickerData=await apiFetch('/api/coinex/ticker');if(!tickerData?.data)return;const tickers=tickerData.data.filter(t=>t.market&&t.market.endsWith('USDT')&&!t.market.startsWith('USDT'));const bulls=tickers.filter(t=>parseFloat(t.change_rate)>0).length;const bullPct=Math.round((bulls/tickers.length)*100);document.getElementById('sentiment-fill').style.width=bullPct+'%';document.getElementById('sentiment-bull').textContent=bullPct;document.getElementById('sentiment-bear').textContent=100-bullPct;const sorted=[...tickers].map(t=>({name:t.market.replace('USDT',''),market:t.market,change:parseFloat(t.change_rate)*100,vol:parseFloat(t.vol)||0,price:parseFloat(t.last)||0})).sort((a,b)=>b.change-a.change);document.getElementById('market-gainers').innerHTML=sorted.slice(0,5).map(t=>topItemHTML(t.name,t.change,t.vol,t.market)).join('');document.getElementById('market-losers').innerHTML=sorted.slice(-5).reverse().map(t=>topItemHTML(t.name,t.change,t.vol,t.market)).join('');const avgVol=sorted.reduce((a,b)=>a+b.vol,0)/sorted.length;const breakouts=sorted.filter(t=>t.vol>avgVol*3).sort((a,b)=>b.vol-a.vol).slice(0,5);document.getElementById('market-breakouts').innerHTML=breakouts.map(t=>topItemHTML(t.name,t.change,t.vol,t.market)).join('')||'<div style="color:var(--dim);font-size:10px">No breakouts detected</div>';const stable=sorted.filter(t=>Math.abs(t.change)<3&&t.vol>avgVol*0.5).slice(0,5);document.getElementById('market-stable').innerHTML=stable.map(t=>topItemHTML(t.name,t.change,t.vol,t.market)).join('')||'<div style="color:var(--dim);font-size:10px">No stable coins</div>';renderMarketNarratives(sorted);renderNewListings();loadLowMCProfile();loadMarketHeatmap();renderPatterns()}catch(e){console.error('Market refresh error:',e)}}
+async function refreshMarket(){
+  try{
+    const tickerData=await apiFetch('/api/coinex/ticker');
+    if(!tickerData?.data)return;
+    const tickers=tickerData.data.filter(t=>t.market&&t.market.endsWith('USDT')&&!t.market.startsWith('USDT'));
+
+    // FIXED: use correct field names
+    const bulls=tickers.filter(t=>parseFloat(t.last)>parseFloat(t.open)).length;
+    const bullPct=Math.round((bulls/tickers.length)*100);
+    document.getElementById('sentiment-fill').style.width=bullPct+'%';
+    document.getElementById('sentiment-bull').textContent=bullPct;
+    document.getElementById('sentiment-bear').textContent=100-bullPct;
+
+    const sorted=[...tickers].map(t=>({
+      name:t.market.replace('USDT',''),market:t.market,
+      change:parseFloat(t.open)>0?((parseFloat(t.last)-parseFloat(t.open))/parseFloat(t.open))*100:0,
+      vol:parseFloat(t.volume)||0,
+      price:parseFloat(t.last)||0
+    })).sort((a,b)=>b.change-a.change);
+
+    document.getElementById('market-gainers').innerHTML=sorted.slice(0,5).map(t=>topItemHTML(t.name,t.change,t.vol,t.market)).join('');
+    document.getElementById('market-losers').innerHTML=sorted.slice(-5).reverse().map(t=>topItemHTML(t.name,t.change,t.vol,t.market)).join('');
+    const avgVol=sorted.reduce((a,b)=>a+b.vol,0)/sorted.length;
+    const breakouts=sorted.filter(t=>t.vol>avgVol*3).sort((a,b)=>b.vol-a.vol).slice(0,5);
+    document.getElementById('market-breakouts').innerHTML=breakouts.map(t=>topItemHTML(t.name,t.change,t.vol,t.market)).join('')||'<div style="color:var(--dim);font-size:10px">No breakouts detected</div>';
+    const stable=sorted.filter(t=>Math.abs(t.change)<3&&t.vol>avgVol*0.5).slice(0,5);
+    document.getElementById('market-stable').innerHTML=stable.map(t=>topItemHTML(t.name,t.change,t.vol,t.market)).join('')||'<div style="color:var(--dim);font-size:10px">No stable coins</div>';
+    renderMarketNarratives(sorted);renderNewListings();loadLowMCProfile();loadMarketHeatmap();renderPatterns();
+  }catch(e){console.error('Market refresh error:',e)}
+}
 function topItemHTML(name,change,vol,market){return`<div class="top-item"><div><div class="top-item-name" style="cursor:pointer" onclick="researchCoin('${market||name+'USDT'}')">${name}</div><div style="font-size:9px;color:var(--dim)">${fmtLarge(vol)}</div></div><div class="top-item-change ${pctClass(change)}">${fmtPct(change)}</div></div>`}
 function renderMarketNarratives(tickers){const NARR=['AI','PEPE','DOGE','TRUMP','MOON','PUMP','CAT','DOG','MEME','AGENT','BTC','SOL'];const results=NARR.map(n=>{const matches=tickers.filter(t=>t.name.toUpperCase().includes(n));if(matches.length===0)return null;const avgGain=matches.reduce((a,b)=>a+b.change,0)/matches.length;return{name:n,count:matches.length,avgGain}}).filter(Boolean).sort((a,b)=>b.avgGain-a.avgGain);document.getElementById('market-narratives').innerHTML=results.slice(0,6).map(r=>`<div class="top-item"><div><div class="top-item-name">${r.name}</div><div style="font-size:9px;color:var(--dim)">${r.count} coins</div></div><div class="top-item-change ${pctClass(r.avgGain)}">${fmtPct(r.avgGain)}</div></div>`).join('')||'<div style="color:var(--dim);font-size:10px">No narrative data</div>'}
 function renderNewListings(){const listings=APP.bgState.newListings||[];const el=document.getElementById('market-new-listings');if(listings.length===0){el.innerHTML='<div style="color:var(--dim);font-size:10px">No new listings yet</div>';return}el.innerHTML=listings.slice(-5).reverse().map(l=>`<div class="top-item"><div><div class="top-item-name">${l.name} <span class="new-badge">NEW</span></div><div style="font-size:9px;color:var(--dim)">${new Date(l.seenAt).toLocaleTimeString()}</div></div><button class="btn btn-secondary btn-sm" onclick="researchCoin('${l.market}')">🔬 RESEARCH</button></div>`).join('')}
